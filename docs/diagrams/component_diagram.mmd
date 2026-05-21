@@ -1,0 +1,29 @@
+graph TD
+  subgraph UI
+    Renderer["Renderer UI"]
+    Electron["Electron Main"]
+  end
+  subgraph API_Process
+    API["FastAPI"]
+    Services["Service Layer"]
+    Rules["BusinessRules Engine"]
+  end
+  subgraph Persistence
+    DB["SQLite licenses.db"]
+    Backups["Backups Folder"]
+  end
+  subgraph Background
+    Scheduler["LicenseScheduler"]
+    Notifier["EmailNotifier"]
+    BGJobs["BackgroundJobManager"]
+  end
+
+  Renderer -->|HTTP| API
+  Electron -->|spawn/watch| API
+  API --> Services
+  Services --> Rules
+  Services --> DB
+  Scheduler --> Notifier
+  Scheduler --> DB
+  BGJobs --> DB
+  BGJobs --> Backups

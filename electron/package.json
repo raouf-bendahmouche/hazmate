@@ -1,0 +1,14 @@
+{
+  "name": "hazmat-license-manager",
+  "version": "2.0.0",
+  "description": "Hazardous Material Transport License Management System",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . --no-sandbox",
+    "dev": "electron . --dev --no-sandbox"
+  },
+  "dependencies": {
+    "electron": "22.3.27"
+  },
+  "devDependencies": {}
+}

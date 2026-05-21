@@ -1,0 +1,53 @@
+classDiagram
+  class Company {
+    +int id
+    +str name
+    +str registration_number
+    +str address
+    +str carrier_type
+    +is_deleted
+    +created_at
+  }
+  class Vehicle {
+    +int id
+    +int company_id
+    +str registration_number
+    +str type
+    +str category
+    +is_deleted
+  }
+  class Route {
+    +int id
+    +str origin
+    +str destination
+    +str checkpoints
+  }
+  class License {
+    +int id
+    +int vehicle_id
+    +int route_id
+    +str record_number
+    +str license_number
+    +str driver_name
+    +date signature_date
+    +date expiration_date
+    +str status
+  }
+  class Database {
+    +_get_connection()
+    +add_license()
+    +search_licenses()
+    +get_statistics()
+  }
+  class LicenseService {
+    +create_complete_license()
+    +soft_delete_license()
+    +restore_license()
+  }
+
+  Company "1" -- "*" Vehicle : owns
+  Vehicle "1" -- "*" License : registers
+  Route "1" -- "*" License : referenced_by
+  LicenseService ..> Database : uses
+  LicenseService ..> Company : manipulates
+  LicenseService ..> Vehicle : manipulates

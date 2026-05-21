@@ -1,0 +1,15 @@
+sequenceDiagram
+    participant UI
+    participant API
+    participant Stats as StatisticsService
+    participant DB
+    UI->>API: GET /api/statistics/dashboard
+    API->>Stats: get_dashboard_statistics()
+    alt cache valid
+        Stats-->>API: cached payload
+    else cache expired
+        Stats->>DB: run aggregation queries
+        DB-->>Stats: query rows
+        Stats-->>API: computed payload (and cache it)
+    end
+    API-->>UI: {status: success, data: payload}

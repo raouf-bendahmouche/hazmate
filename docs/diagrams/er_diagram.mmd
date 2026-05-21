@@ -1,0 +1,74 @@
+erDiagram
+    COMPANIES {
+        INTEGER id PK
+        TEXT name
+        TEXT registration_number
+        TEXT address
+        TEXT carrier_type
+        TEXT account_type
+        INTEGER is_deleted
+        TIMESTAMP created_at
+    }
+    VEHICLES {
+        INTEGER id PK
+        INTEGER company_id FK
+        TEXT registration_number
+        TEXT type
+        TEXT category
+        INTEGER is_deleted
+        TIMESTAMP created_at
+    }
+    ROUTES {
+        INTEGER id PK
+        TEXT origin
+        TEXT destination
+        TEXT checkpoints
+        INTEGER is_deleted
+        TIMESTAMP created_at
+    }
+    LICENSES {
+        INTEGER id PK
+        INTEGER vehicle_id FK
+        INTEGER route_id FK
+        TEXT record_number
+        TEXT driver_name
+        TEXT driver_phone
+        TEXT license_number
+        DATE signature_date
+        DATE expiration_date
+        TEXT status
+        TEXT activity_location
+        TEXT contract_type
+        INTEGER deletion_days
+        INTEGER is_deleted
+        TIMESTAMP created_at
+    }
+    HAZARDOUS_MATERIALS {
+        INTEGER id PK
+        INTEGER vehicle_id FK
+        TEXT material_type
+        INTEGER is_deleted
+        TIMESTAMP created_at
+    }
+    AUDIT_LOGS {
+        INTEGER id PK
+        TEXT action
+        TEXT table_name
+        INTEGER record_id
+        TEXT old_values
+        TEXT new_values
+        TEXT user_id
+        TIMESTAMP timestamp
+    }
+    NOTIFICATIONS_LOG {
+        INTEGER id PK
+        INTEGER license_id FK
+        TEXT email_sent_to
+        TIMESTAMP sent_at
+    }
+
+    COMPANIES ||--o{ VEHICLES : has
+    VEHICLES ||--o{ LICENSES : owns
+    ROUTES ||--o{ LICENSES : referenced_by
+    VEHICLES ||--o{ HAZARDOUS_MATERIALS : carries
+    LICENSES ||--o{ NOTIFICATIONS_LOG : logs

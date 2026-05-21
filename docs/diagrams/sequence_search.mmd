@@ -1,0 +1,11 @@
+sequenceDiagram
+    participant User
+    participant UI as Renderer
+    participant API as FastAPI
+    participant DB as SQLite
+    User->>UI: Enter search term / filters
+    UI->>API: GET /api/licenses?search=...&page=1
+    API->>DB: search_licenses(search_term, filters, pagination)
+    DB-->>API: results (records + total)
+    API-->>UI: {status: success, data: {records, total}}
+    UI->>User: Render results

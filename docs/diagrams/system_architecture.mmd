@@ -1,0 +1,37 @@
+graph LR
+  subgraph Desktop
+    A["Electron Main"] -->|IPC| B["Renderer UI"]
+    B -->|HTTP requests| C["Local API (FastAPI)"]
+  end
+
+  subgraph Backend
+    C --> D[Service Layer]
+    D --> E["Database (SQLite licenses.db)"]
+    D --> F["StatisticsService (in-memory cache)"]
+    D --> G["Notifications (EmailNotifier / Scheduler)"]
+    D --> H["BackgroundJobManager (backups)"]
+  end
+
+  subgraph Modules
+    I["LicenseService (Contract Management)"]
+    J["Search / Query Layer"]
+    K["Company Management"]
+    L["Vehicle Management"]
+    M["Route Management"]
+    N["Hazmat Management"]
+  end
+
+  C --> I
+  I --> E
+  J --> E
+  K --> E
+  L --> E
+  M --> E
+  N --> E
+  G --> E
+  H --> E
+  F --> E
+
+  style E fill:#f9f,stroke:#333,stroke-width:1px
+  style B fill:#cff,stroke:#333,stroke-width:1px
+  style C fill:#cfc,stroke:#333,stroke-width:1px

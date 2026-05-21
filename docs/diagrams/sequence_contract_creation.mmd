@@ -1,0 +1,18 @@
+sequenceDiagram
+    participant User
+    participant UI as Renderer
+    participant API as FastAPI
+    participant Service as LicenseService
+    participant DB as SQLite
+    User->>UI: Fill "Create Contract" form
+    UI->>API: POST /api/licenses (payload)
+    API->>Service: create_complete_license(data)
+    Service->>DB: get_company_by_registration / add_company
+    Service->>DB: get_vehicle_by_registration / add_vehicle
+    Service->>DB: add_route
+    Service->>DB: add_hazmat (optional)
+    Service->>DB: add_license
+    DB-->>Service: license_id
+    Service->>DB: add_audit_log (CREATE)
+    Service-->>API: license_id
+    API-->>UI: 201 { status: success, data: {id} }

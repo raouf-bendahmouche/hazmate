@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' http://127.0.0.1:5757 https://fonts.googleapis.com https://fonts.gstatic.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;">
+  <title>نظام إدارة تراخيص نقل المواد الخطرة</title>
+  <link rel="stylesheet" href="css/style.css"/>
+  <!-- Chart.js for professional data visualization -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── Sidebar ─────────────────────────────────────── -->
+  <nav id="sidebar" role="navigation" aria-label="Main navigation">
+    <div class="sidebar-logo">
+      <div class="logo-icon">☢️</div>
+      <div>
+        <div class="logo-text" data-i18n="nav_dashboard">License System</div>
+        <div class="logo-sub">Hazmat Transport v2.0</div>
+      </div>
+    </div>
+
+    <div class="sidebar-nav">
+      <div class="nav-item active" id="nav-dashboard" data-page="dashboard" tabindex="0" role="button" aria-current="page">
+        <span class="nav-icon">📊</span>
+        <span data-i18n="nav_dashboard">Dashboard</span>
+      </div>
+      <div class="nav-item" id="nav-data-entry" data-page="add-contract" tabindex="0" role="button">
+        <span class="nav-icon">➕</span>
+        <span data-i18n="nav_add_contract">Add Contract</span>
+      </div>
+      <div class="nav-item" id="nav-search" data-page="search" tabindex="0" role="button">
+        <span class="nav-icon">🔍</span>
+        <span data-i18n="nav_search">Search</span>
+      </div>
+      <div class="nav-item" id="nav-deleted-contracts" data-page="deleted-contracts" tabindex="0" role="button">
+        <span class="nav-icon">🗑️</span>
+        <span data-i18n="nav_deleted_contracts">Deleted Contracts</span>
+      </div>
+      <div class="nav-item" id="nav-statistics" data-page="statistics" tabindex="0" role="button">
+        <span class="nav-icon">📈</span>
+        <span data-i18n="nav_statistics">Statistics</span>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+    </div>
+  </nav>
+
+  <!-- ── Main ────────────────────────────────────────── -->
+  <div id="main">
+
+    <!-- Topbar -->
+    <header id="topbar">
+      <button id="back-btn" class="hidden" aria-label="Go back" title="Back (Alt+←)">←</button>
+      <h1 id="page-title" data-i18n="nav_dashboard">Dashboard</h1>
+
+      <div class="topbar-actions">
+        <!-- Dark mode toggle -->
+        <button class="icon-btn" id="dark-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
+
+        <!-- Language selector -->
+        <div class="lang-dropdown">
+          <button class="icon-btn" id="lang-btn" aria-label="Select language" title="Change language">🌐</button>
+          <div class="lang-menu" id="lang-menu" role="menu">
+            <div class="lang-option" data-lang="ar" role="menuitem">🇩🇿 العربية</div>
+            <div class="lang-option" data-lang="fr" role="menuitem">🇫🇷 Français</div>
+            <div class="lang-option" data-lang="en" role="menuitem">🇬🇧 English</div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Dynamic content -->
+    <main id="content" role="main">
+      <div class="empty-state">
+        <div class="empty-icon">⏳</div>
+        <h3>Loading…</h3>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container" aria-live="polite"></div>
+
+<!-- Confirm Dialog -->
+<div class="modal-backdrop hidden" id="confirm-modal" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="confirm-title">Confirm</span>
+      <button class="modal-close" id="confirm-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-message"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="confirm-cancel" data-i18n="btn_cancel">Cancel</button>
+      <button class="btn btn-danger" id="confirm-ok" data-i18n="btn_confirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-backdrop hidden" id="edit-modal" role="dialog" aria-modal="true">
+  <div class="modal" style="max-width:580px;">
+    <div class="modal-header">
+      <span class="modal-title" id="edit-modal-title">Edit Contract</span>
+      <button class="modal-close" id="edit-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body" id="edit-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="edit-cancel" data-i18n="btn_cancel">Cancel</button>
+      <button class="btn btn-primary" id="edit-save" data-i18n="btn_save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/i18n.js"></script>
+<script src="js/frontend_api_client.js"></script>
+<script src="js/main_dashboard_controller.js"></script>
+</body>
+</html>

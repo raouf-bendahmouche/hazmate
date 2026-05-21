@@ -1,0 +1,16 @@
+{
+  "name": "python-project",
+  "version": "1.0.0",
+  "description": "The **Hazardous Material Transport License Management System** is a comprehensive desktop application designed to digitize and manage hazardous material transport operations. The system tracks driver licenses, vehicle information, transport routes, and compliance metrics in a user-friendly interface.",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron . --no-sandbox",
+    "dev": "electron . --dev --no-sandbox"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "22.3.27"
+  }
+}
