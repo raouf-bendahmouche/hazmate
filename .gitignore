@@ -2,17 +2,18 @@
 __pycache__/
 *.pyc
 
-# Database (important!)
-database/*.db
-database/backups/
-
-# Node / Electron
+# Node
 node_modules/
+
+# OS
+.DS_Store
+
+# Build
 dist/
 build/
 
 # Logs
 *.log
 
-# OS files
-.DS_Store
+# Environment
+.env
