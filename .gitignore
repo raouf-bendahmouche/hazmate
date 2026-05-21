@@ -1,0 +1,18 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Database (important!)
+database/*.db
+database/backups/
+
+# Node / Electron
+node_modules/
+dist/
+build/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
