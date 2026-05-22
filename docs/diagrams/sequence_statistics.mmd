@@ -1,15 +1,25 @@
 sequenceDiagram
-    participant UI
-    participant API
-    participant Stats as StatisticsService
-    participant DB
-    UI->>API: GET /api/statistics/dashboard
-    API->>Stats: get_dashboard_statistics()
-    alt cache valid
-        Stats-->>API: cached payload
-    else cache expired
-        Stats->>DB: run aggregation queries
-        DB-->>Stats: query rows
-        Stats-->>API: computed payload (and cache it)
+    actor User
+    participant UI as renderStatistics()
+    participant Client as frontend_api_client.js
+    participant API as GET /api/statistics/dashboard
+    participant Service as StatisticsService.get_dashboard_statistics()
+    participant DB as Database
+    participant SQLite as licenses.db
+
+    User->>UI: open Statistics page
+    UI->>Client: API.statsAdvanced()
+    Client->>API: GET /api/statistics/dashboard
+    API->>Service: get_dashboard_statistics()
+    Service->>DB: _get_connection()
+    DB->>SQLite: KPI, municipality, activity, and forecast queries
+    SQLite-->>DB: aggregate rows
+    DB-->>Service: payload
+    Service-->>API: dashboard stats
+    API-->>Client: data
+    Client-->>UI: render charts
+    UI-->>User: KPI cards, charts, forecast
+
+    opt cache hit within 5 minutes
+        Service-->>API: return CACHE_STORE payload
     end
-    API-->>UI: {status: success, data: payload}

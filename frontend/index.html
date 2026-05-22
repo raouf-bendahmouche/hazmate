@@ -70,6 +70,9 @@
             <div class="lang-option" data-lang="en" role="menuitem">🇬🇧 English</div>
           </div>
         </div>
+
+        <!-- Logout button -->
+        <button class="icon-btn" id="btn-logout" title="Sign out" aria-label="Sign out" style="font-size:16px;">🚪</button>
       </div>
     </header>
 
@@ -118,8 +121,39 @@
   </div>
 </div>
 
+<!-- Auth guard: must load before all other app scripts -->
+<script>
+  (function () {
+    var token = sessionStorage.getItem("auth_token");
+    if (!token) {
+      window.location.replace("pages/login.html");
+    }
+  })();
+</script>
+
 <script src="js/i18n.js"></script>
 <script src="js/frontend_api_client.js"></script>
 <script src="js/main_dashboard_controller.js"></script>
+
+<!-- Logout handler -->
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    var btn = document.getElementById("btn-logout");
+    if (!btn) return;
+    btn.addEventListener("click", async function () {
+      try {
+        var token = sessionStorage.getItem("auth_token");
+        if (token) {
+          await fetch((window._API_BASE || "http://127.0.0.1:5757") + "/auth/logout", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + token }
+          });
+        }
+      } catch (_) { /* best-effort */ }
+      sessionStorage.clear();
+      window.location.replace("pages/login.html");
+    });
+  });
+</script>
 </body>
 </html>

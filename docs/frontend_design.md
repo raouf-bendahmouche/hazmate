@@ -28,11 +28,13 @@ The UI is designed to minimize cognitive load for high-frequency data entry task
 The interface uses a persistent sidebar and a single main content area.
 
 Why this works:
+
 - It keeps the application predictable.
 - It reduces page-switching confusion.
 - It makes the app feel like a native control panel rather than a generic website.
 
 Navigation sections include:
+
 - Dashboard.
 - Add Contract.
 - Search.
@@ -42,12 +44,14 @@ Navigation sections include:
 ## 5. State Management
 
 The main controller keeps a small state object for:
+
 - Current page.
 - Navigation history.
 - Theme selection.
 - Search timers and chart instances.
 
 Why the state is intentionally small:
+
 - Desktop UI workflows are mostly event-driven.
 - Over-engineering state management would add complexity without user benefit.
 - If removed, navigation and back-button behavior would become inconsistent.
@@ -57,6 +61,7 @@ Why the state is intentionally small:
 The frontend never talks directly to SQLite. Every data operation uses the API client wrapper.
 
 Benefits:
+
 - Consistent error handling.
 - Centralized backend base URL selection.
 - Easier maintenance if the backend host or port changes.
@@ -67,6 +72,7 @@ Benefits:
 Forms should enforce data integrity before the request reaches Python.
 
 Examples:
+
 - Required field checks for company, vehicle, record number, and license number.
 - Basic character-level validation where the business domain requires it.
 - Confirmation dialogs for destructive actions such as deletion.
@@ -78,6 +84,7 @@ This is not a replacement for backend validation. It is a usability improvement 
 The dashboard mixes KPI cards, trend charts, and location summaries because operators need both a quick overview and a way to drill into operational risk.
 
 Design principles:
+
 - Put the highest-value numbers first.
 - Keep charts readable and not overcrowded.
 - Use caching-friendly data structures from the backend.
@@ -88,11 +95,13 @@ Design principles:
 The app supports multiple languages through a local dictionary-based approach.
 
 Why this approach was chosen:
+
 - It is easy to audit.
 - It avoids introducing a large i18n framework for a limited set of labels.
 - It keeps runtime dependencies small.
 
 Limitations:
+
 - Complex sentence reordering is harder than in full-featured internationalization libraries.
 - Translation coverage must be maintained manually.
 
@@ -110,6 +119,7 @@ The visual system should remain operationally serious rather than decorative.
 User-facing errors are surfaced through toast notifications, inline field messages, and confirmation modals.
 
 Why this matters:
+
 - The user should know whether the issue is local form validation or a backend failure.
 - The UI should not silently discard submissions.
 - If removed, operators would lose confidence in whether a change actually happened.
@@ -120,6 +130,21 @@ Why this matters:
 - [System Architecture](system_architecture.md)
 - [Backend Design](backend_design.md)
 - [Error Handling and Validation](error_handling_and_validation.md)
+
+## Recent UI Changes (May 2026)
+
+The frontend was updated to integrate with newly added backend features:
+
+- **Login & Settings:** The Settings view includes a Change Password form wired to `POST /auth/change-password`. The renderer now expects and forwards an `Authorization` header for protected operations. Client networking is implemented in `frontend/js/frontend_api_client.js` and UI wiring in `frontend/js/main_dashboard_controller.js`.
+- **Add Contract:** The `company_address` input on the Add Contract flow was changed to a combo/select control to support pre-populated addresses and ad-hoc entries. See [frontend/js/main_dashboard_controller.js](frontend/js/main_dashboard_controller.js).
+- **License actions:** UI placeholders were added to support Renew and Suspend actions for licenses; the corresponding API calls are `POST /api/licenses/{id}/renew` and `POST /api/licenses/{id}/suspend`. Buttons and confirmation flows will be added to the license list/detail views in a follow-up.
+- **Duplicate enterprise handling:** The frontend continues to post company creation requests to `POST /api/companies` and now relies on backend validation to prevent duplicates by registration number or name.
+
+Notes:
+
+- The renderer uses the central `frontend_api_client.js` to manage the Authorization header. Ensure that tokens returned from `POST /auth/login` are stored by the client and attached to subsequent requests.
+- Address list population is left intentionally flexible — it can be populated from settings or managed by an admin interface depending on preference.
+
 # Frontend Design
 
 ## Renderer Composition

@@ -1,15 +1,40 @@
-graph LR
-  User[User]
-  User -->|Add contract| AddContract[Add Contract]
-  User -->|Edit contract| EditContract[Edit Contract]
-  User -->|Archive contract| Archive[Archive Contract]
-  User -->|Restore contract| Restore[Restore Contract]
-  User -->|Search| Search[Search Contracts]
-  User -->|Filter| Filter[Filter Contracts]
-  User -->|Manage companies| Companies[Manage Companies]
-  User -->|Manage vehicles| Vehicles[Manage Vehicles]
-  User -->|Manage drivers| Drivers[Manage Drivers]
-  User -->|View statistics| Stats[View Statistics]
-  User -->|Export data| Export[Export Data]
-  User -->|Change language/theme| Config[Change Settings]
-  User -->|Backup data| Backup[Backup Data]
+flowchart LR
+    Operator([Operator])
+    Admin([Administrator])
+    Scheduler([Scheduler / backup worker])
+    Bootstrap([First-run bootstrap])
+
+    Login((Log in))
+    Dashboard((View dashboard))
+    Create((Create contract))
+    Search((Search contracts))
+    Edit((Edit contract))
+    Delete((Soft-delete contract))
+    Restore((Restore contract))
+    Stats((View statistics))
+    Settings((Manage settings))
+    Expiry((Send expiry alerts))
+    Backup((Create backups))
+    DefaultAdmin((Create default admin))
+
+    Operator --> Login
+    Operator --> Dashboard
+    Operator --> Create
+    Operator --> Search
+    Operator --> Edit
+    Operator --> Delete
+    Operator --> Restore
+    Operator --> Stats
+    Operator --> Settings
+
+    Admin --> Settings
+    Admin --> Restore
+
+    Scheduler --> Expiry
+    Scheduler --> Backup
+    Bootstrap --> DefaultAdmin
+
+    Dashboard -. depends on .-> Login
+    Create -. depends on .-> Login
+    Search -. depends on .-> Login
+    Stats -. depends on .-> Login

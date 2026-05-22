@@ -397,6 +397,25 @@ async function renderSettings() {
                             <button type="button" class="btn btn-ghost" id="test-email-btn">${t('btn_test_email')}</button>
                         </div>
                     </form>
+                    <hr/>
+                    <form id="change-password-form" class="mt-12">
+                        <div class="section-title">${t('change_password')}</div>
+                        <div class="form-group">
+                            <label>Username</label>
+                            <input type="text" class="form-control" name="username" value="${sessionStorage.getItem('auth_user')||''}">
+                        </div>
+                        <div class="form-group">
+                            <label>Current Password</label>
+                            <input type="password" class="form-control" name="current_password">
+                        </div>
+                        <div class="form-group">
+                            <label>New Password</label>
+                            <input type="password" class="form-control" name="new_password">
+                        </div>
+                        <div class="mt-8">
+                            <button type="submit" class="btn btn-secondary">${t('btn_change_password')||'Change Password'}</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         `;
@@ -410,6 +429,17 @@ async function renderSettings() {
                 showToast(t('settings_saved'), 'success');
             } catch (err) {
                 showToast(err.message, 'error');
+            }
+        };
+        document.getElementById('change-password-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            try {
+                await API.changePassword(data.username, data.current_password, data.new_password);
+                showToast('Password changed', 'success');
+            } catch (err) {
+                showToast(err.message || 'Failed to change password', 'error');
             }
         };
     } catch (err) {
@@ -1193,7 +1223,10 @@ async function renderAddContract() {
                         </div>
                         <div class="form-group">
                             <label>${t('company_address')}</label>
-                            <input type="text" class="form-control" name="company_address">
+                            <select class="form-control" name="company_address">
+                                <!-- Options: populated later by user -->
+                                <option value="">(Select address)</option>
+                            </select>
                         </div>
                         <div class="form-row">
                             <div class="form-group">

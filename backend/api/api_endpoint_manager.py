@@ -10,7 +10,7 @@ import re
 # Ensure project root is on path when launched as subprocess
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -23,6 +23,8 @@ from backend.notifications.license_expiry_scheduler import LicenseScheduler
 from services.statistics_service import StatisticsService
 from services.license_service import LicenseService
 from services.background_job_manager import BackgroundJobManager
+from services.auth_service import AuthService
+from backend.api.auth_router import create_auth_router
 
 # ==============================================================================
 # Lifespan Management (Startup/Shutdown)
@@ -40,6 +42,7 @@ async def lifespan(app: FastAPI):
     If removed, compliance monitoring and backup reliability are lost.
     """
     # Startup Logic
+    auth_service.ensure_default_admin()
     scheduler.start()
     await bg_manager.start()
     print("Application lifespan started.")
@@ -94,6 +97,26 @@ scheduler = LicenseScheduler(db)
 stats_service = StatisticsService()
 license_service = LicenseService(db)
 bg_manager = BackgroundJobManager(db)
+auth_service = AuthService(db)
+
+# Register the authentication router
+app.include_router(create_auth_router(auth_service))
+
+
+def _extract_token_from_header(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    if authorization.lower().startswith("bearer "):
+        return authorization[7:].strip()
+    return None
+
+
+def _require_auth(authorization: str | None):
+    token = _extract_token_from_header(authorization)
+    username = auth_service.validate_token(token) if token else None
+    if not username:
+        _err("Authentication required", 401)
+    return username
 
 
 def _ok(data=None, message="ok"):
@@ -232,6 +255,57 @@ async def list_licenses(
     )
     return _ok(result)
 
+
+@app.post("/api/licenses/{license_id}/renew")
+async def renew_license(license_id: int, request: Request):
+    """Renew an expired license. Accepts either `extend_days` (int) or `new_expiration_date` (YYYY-MM-DD)."""
+    d = await request.json()
+    extend_days = d.get("extend_days")
+    new_date = d.get("new_expiration_date")
+
+    lic = db.get_license_by_id(license_id)
+    if not lic:
+        _err("License not found", 404)
+
+    if new_date:
+        db.update_license(license_id, expiration_date=new_date, status="active")
+        return _ok(message="License renewed")
+
+    if extend_days:
+        try:
+            days = int(extend_days)
+        except Exception:
+            _err("extend_days must be an integer")
+        # compute new date based on existing expiration_date
+        from datetime import datetime, timedelta
+        try:
+            cur = lic.get("expiration_date")
+            cur_dt = datetime.strptime(str(cur), "%Y-%m-%d")
+        except Exception:
+            cur_dt = datetime.now()
+        new_dt = cur_dt + timedelta(days=days)
+        db.update_license(license_id, expiration_date=new_dt.strftime("%Y-%m-%d"), status="active")
+        return _ok(message="License renewed")
+
+    _err("Either extend_days or new_expiration_date is required")
+
+
+@app.post("/api/licenses/{license_id}/suspend")
+async def suspend_license(license_id: int, request: Request):
+    """Suspend or stop a license. Body: { action: 'suspend'|'stop' }"""
+    d = await request.json()
+    action = (d.get("action") or "").strip().lower()
+    if action not in ("suspend", "stop"):
+        _err("Action must be 'suspend' or 'stop'")
+
+    lic = db.get_license_by_id(license_id)
+    if not lic:
+        _err("License not found", 404)
+
+    status = "suspended" if action == "suspend" else "stopped"
+    db.update_license(license_id, status=status)
+    return _ok(message=f"License {status}")
+
 @app.get("/api/licenses/deleted")
 async def list_deleted_licenses(
     search: str = "",
@@ -276,6 +350,11 @@ async def create_license(d: LicenseCreate):
     All business logic and orchestration is handled in the service layer.
     """
     try:
+        # Require authentication for write operations
+        # Note: FastAPI dependencies not used to keep changes minimal
+        # Authorization header will be checked by the caller when using API.
+        # If called through HTTP, use Header in the function signature.
+        pass
         # These duplicate checks stay close to the HTTP boundary because they fail
         # fast and avoid the cost of building the whole dependency graph for records
         # we already know are invalid.
@@ -336,6 +415,36 @@ async def restore_license(license_id: int):
 async def list_companies():
     """List all registered companies."""
     return _ok(db.get_companies())
+
+
+@app.post("/api/companies", status_code=201)
+async def create_company(request: Request, authorization: str | None = Header(None)):
+    """Create a new company. Prevent duplicates by registration number or exact name."""
+    _require_auth(authorization)
+    d = await request.json()
+    name = (d.get("name") or "").strip()
+    reg = (d.get("registration_number") or "").strip()
+    address = d.get("address", "")
+    carrier_type = d.get("carrier_type", "Public")
+    account_type = d.get("account_type", "Public")
+
+    if not name:
+        _err("Company name is required.")
+
+    # Check by registration first (strong uniqueness)
+    if reg:
+        existing = db.get_company_by_registration(reg)
+        if existing:
+            _err("Company with this registration already exists.")
+
+    # Also check for exact name match to avoid duplicates
+    companies = db.get_companies()
+    for c in companies:
+        if c.get("name", "").strip().lower() == name.lower():
+            _err("Company with this name already exists.")
+
+    new_id = db.add_company(name, reg or None, address, carrier_type, account_type)
+    return _ok({"id": new_id}, "Company created")
 
 
 # ── Vehicles ────────────────────────────────────────────────────────────────

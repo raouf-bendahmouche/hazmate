@@ -1,18 +1,29 @@
 sequenceDiagram
-    participant User
-    participant UI as Renderer
-    participant API as FastAPI
-    participant Service as LicenseService
-    participant DB as SQLite
-    User->>UI: Fill "Create Contract" form
-    UI->>API: POST /api/licenses (payload)
+    actor User
+    participant UI as main_dashboard_controller.js
+    participant Client as frontend_api_client.js
+    participant API as FastAPI POST /api/licenses
+    participant Service as LicenseService.create_complete_license()
+    participant Rules as BusinessRules.validate_license_creation()
+    participant DB as Database
+    participant SQLite as licenses.db
+
+    User->>UI: fill form and submit contract-form
+    UI->>Client: API.createLicense(data)
+    Client->>API: POST /api/licenses
+    API->>DB: get_license_by_number() / get_license_by_record_number()
     API->>Service: create_complete_license(data)
-    Service->>DB: get_company_by_registration / add_company
-    Service->>DB: get_vehicle_by_registration / add_vehicle
-    Service->>DB: add_route
-    Service->>DB: add_hazmat (optional)
-    Service->>DB: add_license
-    DB-->>Service: license_id
-    Service->>DB: add_audit_log (CREATE)
+    Service->>Rules: validate_license_creation(data)
+    Service->>DB: get_company_by_registration() or add_company()
+    Service->>DB: get_vehicle_by_registration() or add_vehicle()
+    Service->>DB: add_route()
+    opt hazmat_type present
+        Service->>DB: add_hazmat()
+    end
+    Service->>DB: add_license()
+    Service->>DB: add_audit_log("CREATE", "licenses", ...)
+    DB->>SQLite: INSERT/SELECT with WAL + busy_timeout + retry
     Service-->>API: license_id
-    API-->>UI: 201 { status: success, data: {id} }
+    API-->>Client: success envelope
+    Client-->>UI: resolved promise
+    UI-->>User: toast + navigateTo('dashboard')

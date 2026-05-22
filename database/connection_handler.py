@@ -176,6 +176,35 @@ class Database:
         conn.execute("ALTER TABLE hazardous_materials_new RENAME TO hazardous_materials")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hazmat_vehicle ON hazardous_materials(vehicle_id)")
 
+    # ─── Users (Authentication) ───────────────────────────────────────────────
+
+    def create_user(self, username: str, password_hash: str, role: str = "admin") -> int:
+        """Insert a new user row. Password must already be hashed by the caller."""
+        return self._execute_write(
+            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+            (username, password_hash, role),
+            return_lastrowid=True,
+        )
+
+    def get_user_by_username(self, username: str) -> dict | None:
+        """Return the user row for the given username, or None if not found."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, username, password_hash, role, created_at FROM users WHERE username=?",
+            (username,)
+        )
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def update_user_password(self, username: str, new_password_hash: str) -> None:
+        """Replace the stored password hash for a user."""
+        self._execute_write(
+            "UPDATE users SET password_hash=?, updated_at=CURRENT_TIMESTAMP WHERE username=?",
+            (new_password_hash, username),
+        )
+
     # ─── Company ─────────────────────────────────────────────────────────────
 
     def add_company(self, name, registration_number, address, carrier_type, account_type):

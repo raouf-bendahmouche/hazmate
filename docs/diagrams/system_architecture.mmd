@@ -1,37 +1,72 @@
-graph LR
-  subgraph Desktop
-    A["Electron Main"] -->|IPC| B["Renderer UI"]
-    B -->|HTTP requests| C["Local API (FastAPI)"]
-  end
+flowchart LR
+    User[Operator]
 
-  subgraph Backend
-    C --> D[Service Layer]
-    D --> E["Database (SQLite licenses.db)"]
-    D --> F["StatisticsService (in-memory cache)"]
-    D --> G["Notifications (EmailNotifier / Scheduler)"]
-    D --> H["BackgroundJobManager (backups)"]
-  end
+    subgraph Launcher[Startup and desktop shell]
+        MainPy[main.py]
+        PackageJson[package.json / npm start]
+        ElectronMain[electron/main.js]
+        Preload[electron/preload.js]
+        Login[frontend/pages/login.html]
+        Shell[frontend/index.html]
+        Controller[frontend/js/main_dashboard_controller.js]
+        Client[frontend/js/frontend_api_client.js]
+        I18N[frontend/js/i18n.js]
+    end
 
-  subgraph Modules
-    I["LicenseService (Contract Management)"]
-    J["Search / Query Layer"]
-    K["Company Management"]
-    L["Vehicle Management"]
-    M["Route Management"]
-    N["Hazmat Management"]
-  end
+    subgraph Backend[Python backend]
+        API[backend/api/api_endpoint_manager.py]
+        AuthRouter[backend/api/auth_router.py]
+        AuthSvc[services/auth_service.py]
+        LicenseSvc[services/license_service.py]
+        Rules[services/business_rules_engine.py]
+        StatsSvc[services/statistics_service.py]
+        BgJobs[services/background_job_manager.py]
+        Scheduler[backend/notifications/license_expiry_scheduler.py]
+        Mailer[backend/notifications/smtp_email_notifier.py]
+        DB[database/connection_handler.py]
+    end
 
-  C --> I
-  I --> E
-  J --> E
-  K --> E
-  L --> E
-  M --> E
-  N --> E
-  G --> E
-  H --> E
-  F --> E
+    subgraph Storage[Persistence]
+        Schema[database/schema_definitions.sql]
+        SQLite[(database/licenses.db)]
+        Backups[(database/backups/*.db)]
+        Audit[(audit_logs)]
+        Settings[(settings)]
+    end
 
-  style E fill:#f9f,stroke:#333,stroke-width:1px
-  style B fill:#cff,stroke:#333,stroke-width:1px
-  style C fill:#cfc,stroke:#333,stroke-width:1px
+    subgraph Legacy[Reference only]
+        LegacyUI[modules/legacy_pyqt_ui/*]
+    end
+
+    User --> MainPy --> PackageJson --> ElectronMain
+    ElectronMain --> Preload --> Login
+    ElectronMain --> Shell
+    Shell --> Controller --> Client
+    Client --> API
+    Client --> AuthRouter
+
+    API --> AuthRouter
+    API --> AuthSvc
+    API --> LicenseSvc
+    API --> StatsSvc
+    API --> BgJobs
+
+    AuthRouter --> AuthSvc
+    AuthSvc --> DB
+    LicenseSvc --> Rules
+    LicenseSvc --> DB
+    Rules --> DB
+    StatsSvc --> DB
+    BgJobs --> DB
+    Scheduler --> Mailer
+    Scheduler --> DB
+    Mailer --> DB
+
+    DB --> Schema
+    DB --> SQLite
+    BgJobs --> Backups
+    DB --> Audit
+    DB --> Settings
+
+    LegacyUI -. historical reference .-> DB
+    I18N -. labels only .-> Controller

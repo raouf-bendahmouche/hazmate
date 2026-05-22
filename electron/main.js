@@ -159,7 +159,7 @@ function createWindow() {
   });
 
   mainWindow.loadFile(
-    path.join(__dirname, "..", "frontend", "index.html")
+    path.join(__dirname, "..", "frontend", "pages", "login.html")
   );
 
   mainWindow.once("ready-to-show", () => {

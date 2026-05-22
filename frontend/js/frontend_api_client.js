@@ -14,13 +14,24 @@ async function initApiBase() {
   }
 }
 
+// ── Auth helpers ───────────────────────────────────────────────────────────
+
+function getAuthToken() {
+  return sessionStorage.getItem("auth_token");
+}
+
+function getAuthHeaders() {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function apiFetch(path, options = {}) {
   // This wrapper enforces one response contract for the entire renderer layer.
   // Every page depends on the same JSON shape, so centralizing the parse and error
   // check here keeps the UI logic simple and prevents duplicated fetch handling.
   const url = `${API_BASE}${path}`;
   const resp = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...getAuthHeaders(), ...options.headers },
     ...options,
   });
   const data = await resp.json();
@@ -36,6 +47,19 @@ const API = {
   stats: ()               => apiFetch("/api/stats"),
   statsAdvanced: ()       => apiFetch("/api/statistics/dashboard"),
   statsMonthly: (m=12)    => apiFetch(`/api/stats/monthly?months=${m}`),
+
+  // Auth
+  login: (username, password) => apiFetch("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+    headers: {},  // no auth header needed for login
+  }),
+  logout: () => apiFetch("/auth/logout", { method: "POST" }),
+  validateSession: () => apiFetch("/auth/validate"),
+  changePassword: (username, current_password, new_password) => apiFetch("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify({ username, current_password, new_password }),
+  }),
 
   // Licenses
   getLicenses: (params={}) => apiFetch("/api/licenses?" + new URLSearchParams(

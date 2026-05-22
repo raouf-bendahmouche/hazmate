@@ -1,53 +1,223 @@
 classDiagram
-  class Company {
-    +int id
-    +str name
-    +str registration_number
-    +str address
-    +str carrier_type
-    +is_deleted
-    +created_at
-  }
-  class Vehicle {
-    +int id
-    +int company_id
-    +str registration_number
-    +str type
-    +str category
-    +is_deleted
-  }
-  class Route {
-    +int id
-    +str origin
-    +str destination
-    +str checkpoints
-  }
-  class License {
-    +int id
-    +int vehicle_id
-    +int route_id
-    +str record_number
-    +str license_number
-    +str driver_name
-    +date signature_date
-    +date expiration_date
-    +str status
-  }
-  class Database {
-    +_get_connection()
-    +add_license()
-    +search_licenses()
-    +get_statistics()
-  }
-  class LicenseService {
-    +create_complete_license()
-    +soft_delete_license()
-    +restore_license()
-  }
+    class Database {
+        +db_file
+        +_stats_cache
+        +_advanced_stats_cache
+        +_advanced_stats_cached_at
+        +init_database()
+        +_run_migrations()
+        +_get_connection()
+        +_execute_write()
+        +add_audit_log()
+        +create_user()
+        +get_user_by_username()
+        +update_user_password()
+        +add_company()
+        +get_companies()
+        +get_company_by_id()
+        +get_company_by_registration()
+        +add_vehicle()
+        +get_vehicles()
+        +get_vehicles_by_company()
+        +get_vehicle_by_id()
+        +get_vehicle_by_registration()
+        +add_route()
+        +get_routes()
+        +add_license()
+        +get_all_licenses()
+        +search_licenses()
+        +search_deleted_licenses()
+        +get_license_by_id()
+        +update_license()
+        +soft_delete_license()
+        +restore_license()
+        +get_expiring_licenses()
+        +add_hazmat()
+        +get_hazmats_by_vehicle()
+        +get_setting()
+        +set_setting()
+        +get_all_settings()
+        +get_statistics()
+        +get_advanced_statistics()
+        +get_monthly_transports()
+        +delete_company()
+        +delete_vehicle()
+        +delete_license()
+        +log_notification()
+        +get_notification_log()
+    }
 
-  Company "1" -- "*" Vehicle : owns
-  Vehicle "1" -- "*" License : registers
-  Route "1" -- "*" License : referenced_by
-  LicenseService ..> Database : uses
-  LicenseService ..> Company : manipulates
-  LicenseService ..> Vehicle : manipulates
+    class AuthService {
+        +db
+        +_active_tokens
+        +ensure_default_admin()
+        +login(username, password)
+        +logout(token)
+        +validate_token(token)
+        +change_password(username, new_password)
+    }
+
+    class AuthRouter {
+        +create_auth_router(auth_service)
+    }
+
+    class LicenseService {
+        +db
+        +rules
+        +create_complete_license(data)
+        +soft_delete_license(license_id)
+        +restore_license(license_id)
+    }
+
+    class BusinessRules {
+        +db
+        +validate_license_creation(data)
+        +can_restore_license(license_id)
+    }
+
+    class StatisticsService {
+        +db
+        +get_dashboard_statistics()
+        +_get_activity_series(cursor, group_expression, label_key, window_days)
+        +_get_expiry_forecast(cursor)
+    }
+
+    class BackgroundJobManager {
+        +db
+        +_running
+        +start()
+        +stop()
+        +perform_backup()
+        +send_expiry_notification(license_id, recipient)
+    }
+
+    class LicenseScheduler {
+        +db
+        +notifier
+        +running
+        +thread
+        +check_interval
+        +start()
+        +stop()
+        +set_check_interval(hours)
+        +force_check_now()
+    }
+
+    class EmailNotifier {
+        +db
+        +send_expiration_alert(license_data, recipient_email)
+        +send_batch_expiration_alerts(days_ahead)
+    }
+
+    class Company {
+        +id
+        +name
+        +registration_number
+        +address
+        +carrier_type
+        +account_type
+        +is_deleted
+        +deleted_at
+        +created_at
+    }
+
+    class Vehicle {
+        +id
+        +company_id
+        +registration_number
+        +type
+        +category
+        +is_deleted
+        +deleted_at
+        +created_at
+    }
+
+    class Route {
+        +id
+        +origin
+        +destination
+        +checkpoints
+        +is_deleted
+        +deleted_at
+        +created_at
+    }
+
+    class License {
+        +id
+        +vehicle_id
+        +route_id
+        +record_number
+        +driver_name
+        +driver_phone
+        +license_number
+        +signature_date
+        +expiration_date
+        +status
+        +activity_location
+        +contract_type
+        +deletion_days
+        +is_deleted
+        +deleted_at
+        +created_at
+    }
+
+    class HazardousMaterial {
+        +id
+        +vehicle_id
+        +material_type
+        +is_deleted
+        +deleted_at
+        +created_at
+    }
+
+    class AuditLog {
+        +id
+        +action
+        +table_name
+        +record_id
+        +old_values
+        +new_values
+        +user_id
+        +timestamp
+    }
+
+    class Setting {
+        +id
+        +key
+        +value
+        +updated_at
+    }
+
+    class User {
+        +id
+        +username
+        +password_hash
+        +role
+        +created_at
+        +updated_at
+    }
+
+    class NotificationLog {
+        +id
+        +license_id
+        +email_sent_to
+        +sent_at
+    }
+
+    AuthRouter --> AuthService
+    LicenseService --> BusinessRules
+    LicenseService --> Database
+    BusinessRules --> Database
+    StatisticsService --> Database
+    BackgroundJobManager --> Database
+    LicenseScheduler --> EmailNotifier
+    LicenseScheduler --> Database
+    EmailNotifier --> Database
+    AuthService --> Database
+
+    Company "1" --> "0..*" Vehicle : owns
+    Vehicle "1" --> "0..*" License : carries
+    Vehicle "1" --> "0..*" HazardousMaterial : logs
+    Route "1" --> "0..*" License : referenced by
+    License "1" --> "0..*" NotificationLog : notifies
+    User "1" --> "0..*" AuditLog : authored by

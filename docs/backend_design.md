@@ -22,6 +22,7 @@ This backend exists to convert user actions from the Electron UI into validated,
 The API layer exposes the external contract of the system. Its job is not to perform business logic directly, but to validate inputs, map requests to services, and return a stable JSON envelope.
 
 Key responsibilities:
+
 - Health checking for Electron startup readiness.
 - CRUD endpoints for licenses and supporting entities.
 - Settings read/write endpoints.
@@ -29,6 +30,7 @@ Key responsibilities:
 - Consistent error translation using FastAPI exception handlers.
 
 Why this layer matters:
+
 - It prevents the UI from depending on raw SQL or database implementation details.
 - It provides a single place to enforce payload shape and HTTP semantics.
 - If removed, the frontend would need direct database access, which would destroy portability and validation discipline.
@@ -42,6 +44,7 @@ The service layer coordinates operations that touch more than one entity or rule
 - `BusinessRules` enforces domain constraints such as mandatory vehicle registration and restore eligibility.
 
 Why this layer matters:
+
 - It keeps business logic out of route handlers.
 - It isolates multi-step workflows so they are easier to test and reason about.
 - If removed, route handlers would become large and fragile, and changes to business rules would be harder to manage.
@@ -55,6 +58,7 @@ The background layer runs outside the request/response path and supports complia
 - SMTP notifications are only sent when configuration is available.
 
 Why this layer matters:
+
 - Compliance checks must continue without user interaction.
 - Backup behavior must not block the UI.
 - If removed, renewal monitoring and backup resilience would disappear.
@@ -70,6 +74,7 @@ The data layer owns SQLite access patterns and schema evolution.
 - Invalidates cached statistics after mutation.
 
 Why this layer matters:
+
 - It protects the rest of the backend from low-level SQLite concerns.
 - It provides a consistent place to manage file-based persistence.
 - If removed, every service would need to duplicate connection management and migration logic.
@@ -117,6 +122,7 @@ Why this layer matters:
 ## 6. Validation Strategy
 
 Validation occurs in three places:
+
 - UI validation prevents obviously invalid submissions.
 - Pydantic rejects malformed requests.
 - Domain rules reject semantically invalid workflows.
@@ -142,3 +148,16 @@ This layered approach is intentional because each layer protects against a diffe
 - [System Architecture](system_architecture.md)
 - [Database Design](database_design.md)
 - [Error Handling and Validation](error_handling_and_validation.md)
+
+## Recent Changes (May 2026)
+
+The following runtime and API changes were implemented recently and are reflected in the codebase:
+
+- **Authentication service:** A bcrypt-backed authentication service was added to `services/auth_service.py` to support local password-based login for the desktop app. See [services/auth_service.py](services/auth_service.py).
+- **Auth endpoints:** New auth endpoints were registered under `/auth` using a dedicated router: `POST /auth/login`, `POST /auth/logout`, `GET /auth/validate`, and `POST /auth/change-password`. Implementation: [backend/api/auth_router.py](backend/api/auth_router.py).
+- **Endpoint protections:** A lightweight token validation helper was added and applied to write endpoints (company creation, license mutations) to require an Authorization header with a valid session token. See usage in [backend/api/api_endpoint_manager.py](backend/api/api_endpoint_manager.py).
+- **Company creation duplicate checks:** `POST /api/companies` now prevents duplicate enterprises by checking registration number and name before insertion.
+- **License management:** New mutation endpoints were added to support runtime business actions: `POST /api/licenses/{id}/renew` (extend license expiration) and `POST /api/licenses/{id}/suspend` (suspend/stop a contractor). These are implemented in the API manager and routed to the service layer.
+- **Bootstrap admin account:** The system ensures a default admin account exists at startup (`ensure_default_admin`) to allow first-time configuration. The admin password is stored hashed in the local database.
+
+Note: These additions are local-first and intended for desktop usage. The token store is in-memory for the app lifecycle; consider persistent session storage if deploying to shared environments.

@@ -1,11 +1,40 @@
 sequenceDiagram
-    participant User
-    participant UI as Renderer
-    participant API as FastAPI
-    participant DB as SQLite
-    User->>UI: Enter search term / filters
-    UI->>API: GET /api/licenses?search=...&page=1
-    API->>DB: search_licenses(search_term, filters, pagination)
-    DB-->>API: results (records + total)
-    API-->>UI: {status: success, data: {records, total}}
-    UI->>User: Render results
+    actor User
+    participant UI as renderSearch()/loadSearchResults()
+    participant Client as frontend_api_client.js
+    participant API as FastAPI GET /api/licenses
+    participant DB as Database.search_licenses()
+    participant SQLite as licenses.db
+
+    User->>UI: type filters or click Search
+    UI->>Client: API.getLicenses(searchParams)
+    Client->>API: GET /api/licenses?...
+    API->>DB: search_licenses(...)
+    DB->>DB: _update_expired_licenses()
+    DB->>SQLite: COUNT(*) query + paginated join query
+    SQLite-->>DB: total + rows
+    DB-->>API: {total, page, limit, records}
+    API-->>Client: data
+    Client-->>UI: results
+    UI-->>User: table + pagination
+
+    opt edit button
+        User->>UI: click edit
+        UI->>Client: API.getLicense(id)
+        Client->>API: GET /api/licenses/{id}
+        API->>DB: get_license_by_id()
+        DB->>SQLite: SELECT join
+        API-->>Client: record data
+        UI->>Client: API.updateLicense(id, data)
+        Client->>API: PUT /api/licenses/{id}
+        API->>DB: update_license()
+        DB->>SQLite: UPDATE + audit log
+    end
+
+    opt delete button
+        UI->>Client: API.deleteLicense(id)
+        Client->>API: DELETE /api/licenses/{id}
+        API->>Service: soft_delete_license()
+        Service->>DB: soft_delete_license()
+        DB->>SQLite: UPDATE is_deleted=1, deleted_at=...
+    end

@@ -1,29 +1,67 @@
-graph TD
-  subgraph UI
-    Renderer["Renderer UI"]
-    Electron["Electron Main"]
-  end
-  subgraph API_Process
-    API["FastAPI"]
-    Services["Service Layer"]
-    Rules["BusinessRules Engine"]
-  end
-  subgraph Persistence
-    DB["SQLite licenses.db"]
-    Backups["Backups Folder"]
-  end
-  subgraph Background
-    Scheduler["LicenseScheduler"]
-    Notifier["EmailNotifier"]
-    BGJobs["BackgroundJobManager"]
-  end
+flowchart TB
+    subgraph Desktop[Desktop presentation]
+        LoginUI[login.html]
+        MainUI[index.html]
+        Welcome[pages/welcome.html]
+        Controller[main_dashboard_controller.js]
+        APIClient[frontend_api_client.js]
+        Locale[i18n.js]
+    end
 
-  Renderer -->|HTTP| API
-  Electron -->|spawn/watch| API
-  API --> Services
-  Services --> Rules
-  Services --> DB
-  Scheduler --> Notifier
-  Scheduler --> DB
-  BGJobs --> DB
-  BGJobs --> Backups
+    subgraph Host[Electron host]
+        ElectronMain[electron/main.js]
+        Preload[electron/preload.js]
+        IPC[ipcMain + contextBridge]
+    end
+
+    subgraph HTTP[FastAPI boundary]
+        API[api_endpoint_manager.py]
+        AuthRouter[auth_router.py]
+    end
+
+    subgraph Domain[Services]
+        AuthSvc[AuthService]
+        LicenseSvc[LicenseService]
+        Rules[BusinessRules]
+        StatsSvc[StatisticsService]
+        Jobs[BackgroundJobManager]
+        Scheduler[LicenseScheduler]
+        Mailer[EmailNotifier]
+    end
+
+    subgraph Data[Persistence]
+        DB[Database]
+        Schema[schema_definitions.sql]
+        SQLite[(licenses.db)]
+        Backups[(backups/)]
+    end
+
+    LoginUI --> APIClient
+    MainUI --> Controller --> APIClient
+    Welcome --> Controller
+    Controller --> Locale
+
+    ElectronMain --> IPC --> Preload --> APIClient
+    ElectronMain --> API
+
+    APIClient --> API
+    API --> AuthRouter
+    API --> AuthSvc
+    API --> LicenseSvc
+    API --> StatsSvc
+    API --> Jobs
+
+    AuthRouter --> AuthSvc
+    LicenseSvc --> Rules
+    AuthSvc --> DB
+    LicenseSvc --> DB
+    Rules --> DB
+    StatsSvc --> DB
+    Jobs --> DB
+    Scheduler --> Mailer
+    Scheduler --> DB
+    Mailer --> DB
+
+    DB --> Schema
+    DB --> SQLite
+    Jobs --> Backups
