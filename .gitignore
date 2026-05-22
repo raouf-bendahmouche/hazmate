@@ -17,3 +17,7 @@ build/
 
 # Environment
 .env
+
+# Database files
+*.db
+database/backups/
