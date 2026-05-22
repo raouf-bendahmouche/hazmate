@@ -21,3 +21,4 @@ build/
 # Database files
 *.db
 database/backups/
+database/*.db
