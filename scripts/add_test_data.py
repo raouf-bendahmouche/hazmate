@@ -13,6 +13,20 @@ def add_test_data():
     
     print("Adding test data (approximately 500 records)...")
     
+    # Load Setif communes for realistic local addresses and activity locations
+    import json
+    from pathlib import Path
+    communes_path = Path(__file__).parent.parent / "frontend" / "data" / "setif_communes.json"
+    try:
+        with open(communes_path, "r", encoding="utf-8") as f:
+            communes_data = json.load(f)
+        setif_communes = communes_data["communes"]
+        wilaya_name = communes_data["wilaya"]
+    except Exception as e:
+        print(f"Warning: Could not load setif_communes.json: {e}")
+        setif_communes = ["Setif", "Ain El Kebira", "El Eulma", "Ain Oulmene", "Bougaa", "Ain Azel"]
+        wilaya_name = "Setif"
+
     # Sample data for generating diverse records
     company_names = [
         "FastTransport Inc", "SpeedCargo Ltd", "LogisticsPro Co", "GlobalShipping Network",
@@ -42,12 +56,6 @@ def add_test_data():
         "White", "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson", "Young"
     ]
     
-    cities = [
-        "New York", "Los Angeles", "Chicago", "Miami", "Boston", "Seattle", "Denver",
-        "Houston", "Phoenix", "Philadelphia", "Dallas", "San Francisco", "Atlanta",
-        "Washington", "Portland", "Las Vegas", "Nashville", "Memphis", "Detroit", "Cleveland"
-    ]
-    
     hazmat_materials = [
         "Flammable Liquid", "Toxic Substance", "Corrosive Material", "Explosive",
         "Radioactive Material", "Oxidizing Substance", "Organic Peroxide"
@@ -63,9 +71,9 @@ def add_test_data():
     # Create routes first
     routes = []
     for i in range(20):
-        start = cities[i % len(cities)]
-        end = cities[(i + 5) % len(cities)]
-        checkpoint = cities[(i + 10) % len(cities)]
+        start = setif_communes[i % len(setif_communes)]
+        end = setif_communes[(i + 5) % len(setif_communes)]
+        checkpoint = setif_communes[(i + 10) % len(setif_communes)]
         try:
             route_id = db.add_route(start, end, checkpoint)
             routes.append(route_id)
@@ -80,10 +88,11 @@ def add_test_data():
     for comp_idx, company_name in enumerate(company_names):
         try:
             company_type = random.choice(["Public", "Private"])
+            address_commune = random.choice(setif_communes)
             company_id = db.add_company(
                 company_name,
                 f"REG{company_counter:04d}",
-                f"{100 + comp_idx} Commerce Street, {cities[comp_idx % len(cities)]}",
+                f"{address_commune}, {wilaya_name}",
                 company_type,
                 random.choice(["Public", "Private"])
             )
@@ -128,15 +137,21 @@ def add_test_data():
                 days_offset = random.randint(-90, 400)
                 expiry = today + timedelta(days=days_offset)
                 
+                activity_location = random.choice(setif_communes)
+                contract_type = random.choice(["Public", "Private"])
+                
                 db.add_license(
-                    vehicle_id,
-                    random.choice(routes),
-                    record_num,
-                    driver_name,
-                    phone,
-                    license_num,
-                    today,
-                    expiry
+                    vehicle_id=vehicle_id,
+                    route_id=random.choice(routes),
+                    record_number=record_num,
+                    driver_name=driver_name,
+                    driver_phone=phone,
+                    license_number=license_num,
+                    signature_date=today,
+                    expiration_date=expiry,
+                    activity_location=activity_location,
+                    contract_type=contract_type,
+                    deletion_days=random.choice([30, 60, 90])
                 )
                 total_licenses += 1
                 license_counter += 1

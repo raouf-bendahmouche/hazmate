@@ -422,6 +422,12 @@ select.form-control {
   cursor: pointer;
 }
 
+[dir="rtl"] select.form-control {
+  background-position: left 10px center;
+  padding-right: 12px;
+  padding-left: 30px;
+}
+
 textarea.form-control { resize: vertical; min-height: 70px; }
 
 .form-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }

@@ -282,6 +282,77 @@
       font-size: 11px;
       color: var(--text-muted);
     }
+
+    /* Relative position for language selector positioning */
+    .login-card {
+      position: relative;
+    }
+
+    /* Language dropdown inside login card */
+    .lang-dropdown {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+    }
+    [dir="rtl"] .lang-dropdown {
+      right: auto;
+      left: 18px;
+    }
+    .icon-btn {
+      width: 32px; height: 32px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      color: var(--text-primary);
+      transition: all 0.2s;
+    }
+    .icon-btn:hover { background: rgba(255,255,255,0.1); border-color: var(--accent); }
+    
+    .lang-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: var(--bg-deep);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      min-width: 120px;
+      z-index: 100;
+      overflow: hidden;
+    }
+    [dir="rtl"] .lang-menu {
+      right: auto;
+      left: 0;
+    }
+    .lang-menu.open { display: block; }
+    .lang-option {
+      padding: 10px 14px;
+      cursor: pointer;
+      font-size: 13px;
+      display: flex; align-items: center; gap: 8px;
+      color: var(--text-primary);
+      transition: background 0.2s;
+      text-align: start;
+    }
+    .lang-option:hover { background: var(--bg-card-hover); }
+
+    /* RTL overrides for login form */
+    [dir="rtl"] input[type="text"],
+    [dir="rtl"] input[type="password"] {
+      padding: 12px 42px 12px 14px;
+    }
+    [dir="rtl"] .input-icon {
+      left: auto;
+      right: 14px;
+    }
+    [dir="rtl"] .toggle-pw {
+      right: auto;
+      left: 12px;
+    }
   </style>
 </head>
 <body>
@@ -289,34 +360,45 @@
 <div class="login-wrapper">
   <div class="login-card">
 
+    <!-- Language selector -->
+    <div class="lang-dropdown">
+      <button class="icon-btn" id="lang-btn" aria-label="Select language" title="Change language">🌐</button>
+      <div class="lang-menu" id="lang-menu" role="menu">
+        <div class="lang-option" data-lang="ar" role="menuitem">🇩🇿 العربية</div>
+        <div class="lang-option" data-lang="fr" role="menuitem">🇫🇷 Français</div>
+        <div class="lang-option" data-lang="en" role="menuitem">🇬🇧 English</div>
+      </div>
+    </div>
+
     <!-- Brand -->
     <div class="brand">
       <div class="brand-icon">🛡️</div>
       <div class="brand-text">
         <h1>MatHaz Manager</h1>
-        <p>Hazardous Material Transport Licensing</p>
+        <p data-i18n="app_title">Hazardous Material Transport Licensing</p>
       </div>
     </div>
 
-    <p class="login-heading">Welcome back</p>
-    <p class="login-subheading">Sign in to access the management system.</p>
+    <p class="login-heading" data-i18n="login_heading">Welcome back</p>
+    <p class="login-subheading" data-i18n="login_subheading">Sign in to access the management system.</p>
 
     <!-- Error banner -->
     <div id="login-error" role="alert">
       <span>⚠️</span>
-      <span id="login-error-text">Invalid credentials. Please try again.</span>
+      <span id="login-error-text" data-i18n="err_invalid_credentials">Invalid credentials. Please try again.</span>
     </div>
 
     <!-- Form -->
     <form id="login-form" novalidate>
       <div class="form-group">
-        <label for="login-username">Username</label>
+        <label for="login-username" data-i18n="lbl_username">Username</label>
         <div class="input-wrap">
           <span class="input-icon">👤</span>
           <input
             type="text"
             id="login-username"
             name="username"
+            data-i18n-ph="login_username_placeholder"
             placeholder="Enter your username"
             autocomplete="username"
             required
@@ -325,13 +407,14 @@
       </div>
 
       <div class="form-group">
-        <label for="login-password">Password</label>
+        <label for="login-password" data-i18n="smtp_password">Password</label>
         <div class="input-wrap">
           <span class="input-icon">🔒</span>
           <input
             type="password"
             id="login-password"
             name="password"
+            data-i18n-ph="login_password_placeholder"
             placeholder="Enter your password"
             autocomplete="current-password"
             required
@@ -347,18 +430,19 @@
       </div>
 
       <button type="submit" class="btn-login" id="btn-login">
-        <span class="btn-text">Sign In</span>
+        <span class="btn-text" data-i18n="login_btn">Sign In</span>
         <span class="spinner"></span>
       </button>
     </form>
 
-    <p class="login-footer">
+    <p class="login-footer" data-i18n="login_footer">
       Secure access · All sessions are protected
     </p>
 
   </div>
 </div>
 
+<script src="../js/i18n.js"></script>
 <script>
   /* ── Config ── */
   let API_BASE = "http://127.0.0.1:5757";
@@ -368,6 +452,28 @@
       API_BASE = await window.electronAPI.getApiBase();
     }
   }
+
+  /* ── Language Dropdown Logic ── */
+  const langBtn = document.getElementById("lang-btn");
+  const langMenu = document.getElementById("lang-menu");
+
+  langBtn.addEventListener("click", () => {
+    langMenu.classList.toggle("open");
+  });
+
+  document.querySelectorAll(".lang-option").forEach(opt => {
+    opt.addEventListener("click", () => {
+      const lang = opt.getAttribute("data-lang");
+      setLanguage(lang);
+      langMenu.classList.remove("open");
+    });
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!langBtn.contains(e.target) && !langMenu.contains(e.target)) {
+      langMenu.classList.remove("open");
+    }
+  });
 
   /* ── DOM refs ── */
   const form      = document.getElementById("login-form");
@@ -413,7 +519,7 @@
     const password = pwInput.value;
 
     if (!username || !password) {
-      showError("Please enter both username and password.");
+      showError(t("err_username_password_required"));
       return;
     }
 
@@ -429,7 +535,7 @@
       const json = await resp.json();
 
       if (!resp.ok || json.status === "error") {
-        showError(json.message || "Invalid credentials. Please try again.");
+        showError(translateError(json.message || "Invalid credentials. Please try again."));
         setLoading(false);
         return;
       }
@@ -444,7 +550,7 @@
       window.location.href = "../index.html";
 
     } catch (err) {
-      showError("Cannot reach the server. Please ensure the application is running.");
+      showError(t("err_cannot_reach_server"));
       setLoading(false);
     }
   });
@@ -452,6 +558,12 @@
   /* ── On page load: check if already authenticated ── */
   (async () => {
     await initApiBase();
+
+    // Set page custom title key attribute for i18n
+    document.documentElement.setAttribute("data-page-title-key", "login_title");
+    
+    // Apply translations and directions on page load
+    applyLanguage();
 
     const token = sessionStorage.getItem("auth_token");
     if (token) {

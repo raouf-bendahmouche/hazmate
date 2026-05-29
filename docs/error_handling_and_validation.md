@@ -8,16 +8,19 @@ This document explains how the system prevents invalid data, reports failures, a
 
 ### 2.1 Frontend Validation
 
-The renderer performs immediate checks to improve user experience.
+The renderer performs immediate checks to improve user experience, utilizing a stateful Touched/Dirty UX pattern to avoid preemptive error indicators.
 
-Examples:
+Examples & Mechanics:
 - Required fields must be filled before submission.
-- Basic formatting rules reduce avoidable backend errors.
+- Inputs are not visually decorated with invalid indicators (`.input-invalid`) or validation texts until they are marked as `.touched` (on focus blur or edit input) or the form is marked as `.submitted` (during a submit action).
+- The submit button starts disabled on page load and evaluates form-wide validity upon input changes, ensuring no invalid payload is transmitted.
+- Basic formatting rules (like checking for digits-only or letters-only) reduce avoidable backend validation errors.
 - Dangerous actions require confirmation.
 
 Why this layer exists:
-- It provides instant feedback.
-- It saves users from waiting for round trips for obviously incomplete forms.
+- It provides non-intrusive instant feedback.
+- It prevents early-trigger validation errors that ruin the user experience.
+- It saves users from waiting for backend validation loops for obviously incorrect or incomplete entries.
 
 ### 2.2 API Validation
 

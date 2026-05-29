@@ -149,7 +149,11 @@ This layered approach is intentional because each layer protects against a diffe
 - [Database Design](database_design.md)
 - [Error Handling and Validation](error_handling_and_validation.md)
 
-## Recent Changes (May 2026)
+## Recent Changes (Late May 2026)
+
+- **Optional Pydantic fields & backend schema mapping:** Added a backend mapping layer `map_clean_to_legacy_dict` to `backend/api/api_endpoint_manager.py` that processes requests conforming to either clean or legacy payload models. It makes `license_number` optional in the Pydantic validator (`LicenseCreate`), auto-generating it dynamically, and splits compound fields (`vehicle_type_category`, `route`) so that any incoming API requests are formatted correctly before hitting the service logic.
+
+## Recent Changes (Early May 2026)
 
 The following runtime and API changes were implemented recently and are reflected in the codebase:
 

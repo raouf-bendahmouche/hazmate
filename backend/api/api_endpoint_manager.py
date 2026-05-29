@@ -156,7 +156,7 @@ class LicenseCreate(BaseModel):
     company_name: str
     vehicle_reg: str
     record_number: str
-    license_number: str
+    license_number: Optional[str] = ""
     driver_name: Optional[str] = ""
     driver_phone: Optional[str] = ""
     company_reg: Optional[str] = ""
@@ -174,6 +174,8 @@ class LicenseCreate(BaseModel):
     activity_location: Optional[str] = ""
     contract_type: Optional[str] = ""
     deletion_days: Optional[int] = None
+    vehicle_type_category: Optional[str] = ""
+    route: Optional[str] = ""
 
 class LicenseUpdate(BaseModel):
     driver_name: Optional[str] = None
@@ -343,6 +345,35 @@ async def get_license(license_id: int):
         _err("License not found", 404)
     return _ok(row)
 
+def map_clean_to_legacy_dict(data: dict) -> dict:
+    # Auto-generate license_number if missing
+    if not data.get("license_number") and data.get("record_number"):
+        data["license_number"] = f"LIC-{data['record_number']}"
+        
+    # Split vehicle_type_category if present
+    if "vehicle_type_category" in data:
+        type_cat = (data.pop("vehicle_type_category") or "").strip()
+        if type_cat:
+            parts = type_cat.split(None, 1)
+            data["vehicle_type"] = parts[0]
+            data["vehicle_category"] = parts[1] if len(parts) > 1 else ""
+        else:
+            data["vehicle_type"] = ""
+            data["vehicle_category"] = ""
+            
+    # Split route if present
+    if "route" in data:
+        route = (data.pop("route") or "").strip()
+        if route:
+            parts = re.split(r"→|->", route)
+            data["route_origin"] = parts[0].strip()
+            data["route_dest"] = parts[1].strip() if len(parts) > 1 else ""
+        else:
+            data["route_origin"] = ""
+            data["route_dest"] = ""
+            
+    return data
+
 @app.post("/api/licenses", status_code=201)
 async def create_license(d: LicenseCreate):
     """
@@ -355,15 +386,22 @@ async def create_license(d: LicenseCreate):
         # Authorization header will be checked by the caller when using API.
         # If called through HTTP, use Header in the function signature.
         pass
+        
+        # Map clean properties to legacy model format
+        data = d.dict()
+        data = map_clean_to_legacy_dict(data)
+
         # These duplicate checks stay close to the HTTP boundary because they fail
         # fast and avoid the cost of building the whole dependency graph for records
         # we already know are invalid.
-        if db.get_license_by_number(d.license_number):
-            _err(f"License number '{d.license_number}' already exists.")
-        if db.get_license_by_record_number(d.record_number):
-            _err(f"Record number '{d.record_number}' already exists.")
+        lic_num = data.get("license_number")
+        rec_num = data.get("record_number")
+        if db.get_license_by_number(lic_num):
+            _err(f"License number '{lic_num}' already exists.")
+        if db.get_license_by_record_number(rec_num):
+            _err(f"Record number '{rec_num}' already exists.")
 
-        lic_id = license_service.create_complete_license(d.dict())
+        lic_id = license_service.create_complete_license(data)
         return _ok({"id": lic_id}, "License created successfully")
     except ValueError as e:
         _err(str(e))

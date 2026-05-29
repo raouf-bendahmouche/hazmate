@@ -117,7 +117,7 @@ function navigateTo(path, addToHistory = true) {
     el.pageTitle.textContent = t(`nav_${path.replace('-', '_')}`);
 
     // Show loading spinner immediately
-    el.content.innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p style="margin-top: 10px;">Loading...</p></div>';
+    el.content.innerHTML = `<div class="loading-overlay"><div class="spinner"></div><p style="margin-top: 10px;">${t('loading') || 'Loading...'}</p></div>`;
 
     // Use a timeout to allow the UI to update before starting the heavy work
     setTimeout(() => {
@@ -142,11 +142,11 @@ function navigateTo(path, addToHistory = true) {
                     renderStatistics();
                     break;
                 default:
-                    el.content.innerHTML = `<div class="empty-state"><h2>404 - Page Not Found</h2><p>The requested page '${path}' does not exist.</p></div>`;
+                    el.content.innerHTML = `<div class="empty-state"><h2>${t('page_not_found') || '404 - Page Not Found'}</h2><p>${t('page_not_exist') || "The requested page does not exist."}</p></div>`;
             }
         } catch (err) {
             showToast(err.message, 'error');
-            el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+            el.content.innerHTML = `<div class="empty-state"><h2>${t('toast_error')}</h2><p>${translateError(err.message)}</p></div>`;
         }
     }, 50); // A small delay to ensure the spinner renders
 }
@@ -159,7 +159,7 @@ function goBack() {
 }
 
 function renderCurrentPage() {
-    el.content.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
+    el.content.innerHTML = `<div class="loading-overlay"><div class="spinner"></div><p style="margin-top: 10px;">${t('loading') || 'Loading...'}</p></div>`;
     
     switch(state.currentPath) {
         case 'welcome':
@@ -181,7 +181,7 @@ function renderCurrentPage() {
             renderStatistics();
             break;
         default:
-            el.content.innerHTML = `<h2>Page ${state.currentPath} not found</h2>`;
+            el.content.innerHTML = `<h2>${t('page_not_found') || 'Page not found'}</h2>`;
     }
 }
 
@@ -210,7 +210,7 @@ function showToast(message, type = 'success') {
         <div class="toast-icon">${icons[type]}</div>
         <div class="toast-body">
             <div class="toast-title">${t('toast_' + type)}</div>
-            <div class="toast-msg">${message}</div>
+            <div class="toast-msg">${translateError(message)}</div>
         </div>
     `;
     
@@ -292,16 +292,23 @@ async function renderDashboard() {
                 <div class="card-header"><h3 class="card-title">🔮 ${t('predictive_insights') || 'Predictive Insights: Expiry Forecast'}</h3></div>
                 <div class="card-body">
                     <div class="stats-grid">
-                        ${forecast.map(f => `
-                            <div class="stat-card" style="border-left: 4px solid var(--warning)">
-                                <div class="stat-info">
-                                    <div class="stat-value">${f.count}</div>
-                                    <div class="stat-label">Expiring in ${f.label}</div>
+                        ${forecast.map(f => {
+                            const num = f.label.split(' ')[0];
+                            let daysStr = t('days') || 'days';
+                            if (currentLang === 'ar') daysStr = 'يوم';
+                            else if (currentLang === 'fr') daysStr = 'jours';
+                            const localizedLabel = t('expiring_in') + ' ' + num + ' ' + daysStr;
+                            return `
+                                <div class="stat-card" style="border-left: 4px solid var(--warning)">
+                                    <div class="stat-info">
+                                        <div class="stat-value">${f.count}</div>
+                                        <div class="stat-label">${localizedLabel}</div>
+                                    </div>
                                 </div>
-                            </div>
-                        `).join('')}
+                            `;
+                        }).join('')}
                     </div>
-                    <p class="text-muted mt-8 text-sm">Automated forecast based on current active contracts and their respective expiration dates.</p>
+                    <p class="text-muted mt-8 text-sm">${t('expiring_in_forecast_label')}</p>
                 </div>
             </div>
         `;
@@ -401,15 +408,15 @@ async function renderSettings() {
                     <form id="change-password-form" class="mt-12">
                         <div class="section-title">${t('change_password')}</div>
                         <div class="form-group">
-                            <label>Username</label>
+                            <label>${t('lbl_username')}</label>
                             <input type="text" class="form-control" name="username" value="${sessionStorage.getItem('auth_user')||''}">
                         </div>
                         <div class="form-group">
-                            <label>Current Password</label>
+                            <label>${t('lbl_current_password')}</label>
                             <input type="password" class="form-control" name="current_password">
                         </div>
                         <div class="form-group">
-                            <label>New Password</label>
+                            <label>${t('lbl_new_password')}</label>
                             <input type="password" class="form-control" name="new_password">
                         </div>
                         <div class="mt-8">
@@ -437,9 +444,9 @@ async function renderSettings() {
             const data = Object.fromEntries(formData.entries());
             try {
                 await API.changePassword(data.username, data.current_password, data.new_password);
-                showToast('Password changed', 'success');
+                showToast(t('password_changed'), 'success');
             } catch (err) {
-                showToast(err.message || 'Failed to change password', 'error');
+                showToast(err.message || t('password_change_failed'), 'error');
             }
         };
     } catch (err) {
@@ -670,7 +677,7 @@ async function renderDeletedContracts() {
             <table>
                 <thead>
                     <tr>
-                        <th>ID</th>
+                        <th>${t('col_id')}</th>
                         <th>${t('col_record')}</th>
                         <th>${t('col_license')}</th>
                         <th>${t('col_driver')}</th>
@@ -1168,8 +1175,9 @@ async function renderAddContract() {
                 </div>
                 <div class="card-body">
                     <form id="contract-form">
-                        <!-- Contract -->
-                        <div class="section-title">${t('sect_contract')}</div>
+                        <!-- Single Section Add Contract -->
+                        <div class="section-title">${t('add_contract_title')}</div>
+                        
                         <div class="form-row">
                             <div class="form-group">
                                 <label>${t('record_number')} *</label>
@@ -1177,57 +1185,55 @@ async function renderAddContract() {
                                 <div class="field-error" data-error-for="record_number"></div>
                             </div>
                             <div class="form-group">
-                                <label>${t('license_number')} *</label>
-                                <input type="text" class="form-control" name="license_number" data-validate="required|numbers">
-                                <div class="field-error" data-error-for="license_number"></div>
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>${t('signature_date')}</label>
+                                <label>${t('signing_date')}</label>
                                 <input type="date" class="form-control" name="signature_date">
-                            </div>
-                            <div class="form-group">
-                                <label>${t('expiration_date')}</label>
-                                <input type="date" class="form-control" name="expiration_date">
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>${t('activity_location')}</label>
-                                <input type="text" class="form-control" name="activity_location">
-                            </div>
-                            <div class="form-group">
-                                <label>${t('contract_type')}</label>
-                                <select class="form-control" name="contract_type">
-                                    <option value="">${t('opt_all')}</option>
-                                    <option value="Public">${t('opt_public')}</option>
-                                    <option value="Private">${t('opt_private')}</option>
-                                </select>
                             </div>
                         </div>
 
-                        <!-- Company -->
-                        <div class="section-title mt-16">${t('sect_company')}</div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label>${t('company_name')} *</label>
+                                <label>${t('company_carrier_name')} *</label>
                                 <input type="text" class="form-control" name="company_name" data-validate="required|letters">
                                 <div class="field-error" data-error-for="company_name"></div>
                             </div>
                             <div class="form-group">
-                                <label>${t('company_reg')}</label>
+                                <label>${t('registration_code')}</label>
                                 <input type="text" class="form-control" name="company_reg" data-validate="numbers">
                                 <div class="field-error" data-error-for="company_reg"></div>
                             </div>
                         </div>
+
                         <div class="form-group">
                             <label>${t('company_address')}</label>
                             <select class="form-control" name="company_address">
                                 <!-- Options: populated later by user -->
-                                <option value="">(Select address)</option>
+                                <option value="">${t('select_address')}</option>
                             </select>
                         </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>${t('vehicle_registration_number')} *</label>
+                                <input type="text" class="form-control" name="vehicle_reg" data-validate="required|numbers">
+                                <div class="field-error" data-error-for="vehicle_reg"></div>
+                            </div>
+                            <div class="form-group">
+                                <label>${t('vehicle_type_category')}</label>
+                                <input type="text" class="form-control" name="vehicle_type_category" placeholder="e.g. Truck A">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>${t('route')}</label>
+                                <input type="text" class="form-control" name="route" placeholder="e.g. Setif → Algiers">
+                            </div>
+                            <div class="form-group">
+                                <label>${t('license_expiry_date')}</label>
+                                <input type="date" class="form-control" name="expiration_date">
+                            </div>
+                        </div>
+
                         <div class="form-row">
                             <div class="form-group">
                                 <label>${t('carrier_type')}</label>
@@ -1237,62 +1243,9 @@ async function renderAddContract() {
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>${t('account_type')}</label>
-                                <select class="form-control" name="account_type">
-                                    <option value="Public">${t('opt_public')}</option>
-                                    <option value="Private">${t('opt_private')}</option>
-                                </select>
+                                <label>${t('transported_materials')}</label>
+                                <input type="text" class="form-control" name="hazmat_type">
                             </div>
-                        </div>
-
-                        <!-- Vehicle -->
-                        <div class="section-title mt-16">${t('sect_vehicle')}</div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>${t('vehicle_reg')} *</label>
-                                <input type="text" class="form-control" name="vehicle_reg" data-validate="required|numbers">
-                                <div class="field-error" data-error-for="vehicle_reg"></div>
-                            </div>
-                            <div class="form-group">
-                                <label>${t('vehicle_type')}</label>
-                                <input type="text" class="form-control" name="vehicle_type">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>${t('vehicle_category')}</label>
-                            <input type="text" class="form-control" name="vehicle_category">
-                        </div>
-
-                        <!-- Driver & Route -->
-                        <div class="section-title mt-16">${t('sect_driver')}</div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>${t('driver_name')}</label>
-                                <input type="text" class="form-control" name="driver_name" data-validate="letters">
-                                <div class="field-error" data-error-for="driver_name"></div>
-                            </div>
-                            <div class="form-group">
-                                <label>${t('driver_phone')}</label>
-                                <input type="text" class="form-control" name="driver_phone" data-validate="numbers">
-                                <div class="field-error" data-error-for="driver_phone"></div>
-                            </div>
-                        </div>
-                        <div class="section-title mt-16">${t('sect_route')}</div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>${t('route_origin')}</label>
-                                <input type="text" class="form-control" name="route_origin" data-validate="letters">
-                                <div class="field-error" data-error-for="route_origin"></div>
-                            </div>
-                            <div class="form-group">
-                                <label>${t('route_dest')}</label>
-                                <input type="text" class="form-control" name="route_dest" data-validate="letters">
-                                <div class="field-error" data-error-for="route_dest"></div>
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>${t('hazmat_type')}</label>
-                            <input type="text" class="form-control" name="hazmat_type">
                         </div>
 
                         <!-- Actions -->
@@ -1308,6 +1261,26 @@ async function renderAddContract() {
         // Validation for the form fields
         setupContractFormValidation();
         document.getElementById('contract-form').addEventListener('submit', handleFormSubmit);
+
+        // Populate company address options from Setif communes JSON
+        try {
+            const resp = await fetch('./data/setif_communes.json');
+            if (resp.ok) {
+                const data = await resp.json();
+                const select = document.querySelector('select[name="company_address"]');
+                if (select && data.communes) {
+                    select.innerHTML = `<option value="">${t('select_address')}</option>`;
+                    data.communes.forEach(commune => {
+                        const opt = document.createElement('option');
+                        opt.value = `${commune}, ${data.wilaya}`;
+                        opt.textContent = `${commune} (${data.wilaya})`;
+                        select.appendChild(opt);
+                    });
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load address communes:", e);
+        }
     } catch (err) {
         el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
         showToast(err.message, 'error');
@@ -1318,19 +1291,69 @@ async function renderAddContract() {
 
 async function handleFormSubmit(event) {
     event.preventDefault();
-    const submitBtn = document.getElementById('submit-btn');
+    const form = event.target;
+    
+    // Validate form to display errors if any are present
     if (!validateContractForm()) {
         showToast(t('form_has_errors'), 'error');
         return;
     }
+    
+    const submitBtn = document.getElementById('submit-btn');
     submitBtn.disabled = true;
     submitBtn.textContent = t('btn_saving');
 
-    const formData = new FormData(event.target);
+    const formData = new FormData(form);
     const data = Object.fromEntries(formData.entries());
 
+    // Map frontend clean fields to backend legacy model structure
+    const payload = {
+        record_number: data.record_number,
+        company_name: data.company_name,
+        company_reg: data.company_reg || "",
+        company_address: data.company_address || "",
+        vehicle_reg: data.vehicle_reg,
+        expiration_date: data.expiration_date || "",
+        signature_date: data.signature_date || "",
+        carrier_type: data.carrier_type || "Public",
+        account_type: data.carrier_type || "Public",
+        contract_type: data.carrier_type || "Public",
+        hazmat_type: data.hazmat_type || "",
+        // Default empty strings/null for un-exposed required schema keys
+        driver_name: "",
+        driver_phone: "",
+        route_checkpoints: "",
+        deletion_days: null,
+        // Auto-generate license_number based on record_number
+        license_number: 'LIC-' + data.record_number,
+        // Default activity location to the commune name from address
+        activity_location: data.company_address ? data.company_address.split(',')[0].trim() : ""
+    };
+
+    // Split vehicle type and category by space
+    const typeCat = (data.vehicle_type_category || "").trim();
+    if (typeCat) {
+        const parts = typeCat.split(/\s+/);
+        payload.vehicle_type = parts[0] || "";
+        payload.vehicle_category = parts.slice(1).join(" ") || "";
+    } else {
+        payload.vehicle_type = "";
+        payload.vehicle_category = "";
+    }
+
+    // Split route by → or -> separator
+    const route = (data.route || "").trim();
+    if (route) {
+        const parts = route.split(/→|->/);
+        payload.route_origin = (parts[0] || "").trim();
+        payload.route_dest = (parts[1] || "").trim();
+    } else {
+        payload.route_origin = "";
+        payload.route_dest = "";
+    }
+
     try {
-        await API.createLicense(data);
+        await API.createLicense(payload);
         showToast(t('saved_ok'), 'success');
         navigateTo('dashboard');
     } catch (err) {
@@ -1348,8 +1371,17 @@ function setupContractFormValidation() {
     function setError(input, message) {
         const errorEl = form.querySelector(`[data-error-for="${input.name}"]`);
         if (!errorEl) return;
-        errorEl.textContent = message || '';
-        input.classList.toggle('input-invalid', Boolean(message));
+        
+        // Show validation error only if it's touched or if form is submitted
+        const shouldShowError = input.classList.contains('touched') || form.classList.contains('submitted');
+        
+        if (shouldShowError && message) {
+            errorEl.textContent = message;
+            input.classList.add('input-invalid');
+        } else {
+            errorEl.textContent = '';
+            input.classList.remove('input-invalid');
+        }
     }
 
     function validateInput(input) {
@@ -1384,17 +1416,25 @@ function setupContractFormValidation() {
     }
 
     function validateAll() {
-        const allValid = trackedInputs.every(validateInput);
-        submitBtn.disabled = !allValid;
-        return allValid;
+        let formIsValid = true;
+        trackedInputs.forEach(input => {
+            const isInputValid = validateInput(input);
+            if (!isInputValid) {
+                formIsValid = false;
+            }
+        });
+        submitBtn.disabled = !formIsValid;
+        return formIsValid;
     }
 
     trackedInputs.forEach(input => {
         input.addEventListener('input', () => {
+            input.classList.add('touched');
             validateInput(input);
             validateAll();
         });
         input.addEventListener('blur', () => {
+            input.classList.add('touched');
             validateInput(input);
             validateAll();
         });
@@ -1405,11 +1445,46 @@ function setupContractFormValidation() {
 
 function validateContractForm() {
     const form = document.getElementById('contract-form');
-    const submitBtn = document.getElementById('submit-btn');
+    if (!form) return false;
+    form.classList.add('submitted');
+    
     const inputs = Array.from(form.querySelectorAll('[data-validate]'));
-    const inputEvent = new Event('blur');
-    inputs.forEach(input => input.dispatchEvent(inputEvent));
-    return !submitBtn.disabled;
+    let allValid = true;
+    
+    inputs.forEach(input => {
+        input.classList.add('touched');
+        const rawRules = input.getAttribute('data-validate');
+        if (rawRules) {
+            const value = input.value.trim();
+            const rules = rawRules.split('|');
+            let message = '';
+            
+            if (rules.includes('required') && !value) {
+                message = t('invalid_required');
+                allValid = false;
+            } else if (value) {
+                if (rules.includes('numbers') && !/^\d+$/.test(value)) {
+                    message = t('invalid_numbers_only');
+                    allValid = false;
+                } else if (rules.includes('letters') && !/^[\p{L}\s'\-]+$/u.test(value)) {
+                    message = t('invalid_letters_only');
+                    allValid = false;
+                }
+            }
+            
+            const errorEl = form.querySelector(`[data-error-for="${input.name}"]`);
+            if (errorEl) {
+                errorEl.textContent = message;
+            }
+            input.classList.toggle('input-invalid', Boolean(message));
+        }
+    });
+    
+    const submitBtn = document.getElementById('submit-btn');
+    if (submitBtn) {
+        submitBtn.disabled = !allValid;
+    }
+    return allValid;
 }
 
 // ── Add Vehicle Linked to Contract ──────────────────────────
@@ -1422,6 +1497,8 @@ async function openEditModal(id) {
         const data = await API.getLicense(id);
         const modal = document.getElementById('edit-modal');
         const body = document.getElementById('edit-modal-body');
+        
+        document.getElementById('edit-modal-title').textContent = t('edit_contract_title');
         
         body.innerHTML = `
             <form id="edit-form">
@@ -1483,6 +1560,9 @@ async function renderWelcome() {
         const welcomePage = await fetch('./pages/welcome.html');
         if (!welcomePage.ok) throw new Error('Could not load welcome page.');
         el.content.innerHTML = await welcomePage.text();
+        
+        // Translate welcome page content dynamically since it is loaded via fetch
+        applyLanguageToContainer(el.content);
 
         // Add event listeners for the action cards
         document.getElementById('action-add-contract').addEventListener('click', () => navigateTo('add-contract'));
@@ -1490,7 +1570,7 @@ async function renderWelcome() {
         document.getElementById('action-view-stats').addEventListener('click', () => navigateTo('statistics'));
 
     } catch (err) {
-        el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+        el.content.innerHTML = `<div class="empty-state"><h2>${t('toast_error')}</h2><p>${translateError(err.message)}</p></div>`;
         showToast(err.message, 'error');
     }
 }

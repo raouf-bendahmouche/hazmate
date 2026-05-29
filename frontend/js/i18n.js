@@ -181,6 +181,58 @@ const TRANSLATIONS = {
     saved_ok:       "Contract saved successfully!",
     deleted_ok:     "Record deleted.",
     settings_saved: "Settings saved.",
+
+    // Added for localization and consistency
+    app_title: "Hazmat Transport License System",
+    change_password: "Change Password",
+    btn_change_password: "Change Password",
+    lbl_username: "Username",
+    lbl_current_password: "Current Password",
+    lbl_new_password: "New Password",
+    password_changed: "Password changed successfully.",
+    password_change_failed: "Failed to change password.",
+    try_adjust_filter: "Try adjusting your filters or search terms",
+    btn_add_new: "Add New Contract",
+    col_id: "ID",
+    select_address: "Select address (commune)",
+    welcome_title: "Welcome to the Hazmat Transport License System",
+    welcome_desc: "Your central hub for managing and tracking hazardous material transport licenses.",
+    welcome_add_desc: "Start the process of issuing a new license.",
+    welcome_search_desc: "Find existing contracts and licenses quickly.",
+    welcome_view_stats_desc: "Go to the dashboard for analytics and insights.",
+    system_status: "System Status",
+    all_systems_operational: "All systems are currently operational.",
+    login_title: "Login — License Management System",
+    login_heading: "Welcome back",
+    login_subheading: "Sign in to access the management system.",
+    login_username_placeholder: "Enter your username",
+    login_password_placeholder: "Enter your password",
+    login_btn: "Sign In",
+    login_footer: "Secure access · All sessions are protected",
+    err_username_password_required: "Please enter both username and password.",
+    err_invalid_credentials: "Invalid username or password.",
+    err_session_expired: "Session expired or invalid.",
+    err_current_password_incorrect: "Current password is incorrect.",
+    err_new_password_too_short: "New password must be at least 6 characters.",
+    err_business_vehicle_required: "Business Rule Violation: Vehicle registration is mandatory for any contract.",
+    err_business_license_required: "Business Rule Violation: License number is mandatory.",
+    err_cannot_restore_associated_deleted: "Cannot restore license: Associated vehicle or company is missing or deleted.",
+    err_endpoint_not_found: "Endpoint not found",
+    err_cannot_reach_server: "Cannot reach the server. Please ensure the application is running.",
+    expiring_in: "Expiring in",
+    days_forecast: "forecast based on active contracts",
+    expiring_in_forecast_label: "Automated forecast based on current active contracts and their respective expiration dates.",
+    edit_contract_title: "Edit Contract",
+    loading: "Loading...",
+    days: "days",
+    signing_date: "Signing Date",
+    company_carrier_name: "Carrier/Company Full Name",
+    registration_code: "Registration Code",
+    vehicle_registration_number: "Vehicle Registration Number",
+    vehicle_type_category: "Vehicle Type and Category",
+    route: "Route (from Point A to Point B)",
+    license_expiry_date: "License Expiry Date",
+    transported_materials: "Transported Materials",
   },
 
   fr: {
@@ -340,6 +392,58 @@ const TRANSLATIONS = {
     saved_ok:       "Contrat enregistré!",
     deleted_ok:     "Enregistrement supprimé.",
     settings_saved: "Paramètres sauvegardés.",
+
+    // Added for localization and consistency
+    app_title: "Système de Gestion des Licences Hazmat",
+    change_password: "Changer le mot de passe",
+    btn_change_password: "Changer le mot de passe",
+    lbl_username: "Nom d'utilisateur",
+    lbl_current_password: "Mot de passe actuel",
+    lbl_new_password: "Nouveau mot de passe",
+    password_changed: "Mot de passe changé avec succès.",
+    password_change_failed: "Échec du changement de mot de passe.",
+    try_adjust_filter: "Essayez d'ajuster vos filtres ou termes de recherche",
+    btn_add_new: "Ajouter Nouveau Contrat",
+    col_id: "ID",
+    select_address: "Sélectionner l'adresse (commune)",
+    welcome_title: "Bienvenue dans le système de gestion des licences de transport de matières dangereuses",
+    welcome_desc: "Votre hub central pour la gestion et le suivi des licences de transport de matières dangereuses.",
+    welcome_add_desc: "Commencer le processus de délivrance d'une nouvelle licence.",
+    welcome_search_desc: "Trouvez rapidement les contrats et licences existants.",
+    welcome_view_stats_desc: "Accédez au tableau de bord pour les analyses et les informations.",
+    system_status: "Statut du système",
+    all_systems_operational: "Tous les systèmes sont opérationnels.",
+    login_title: "Connexion — Système de Gestion des Licences",
+    login_heading: "Bon retour",
+    login_subheading: "Connectez-vous pour accéder au système de gestion.",
+    login_username_placeholder: "Entrez votre nom d'utilisateur",
+    login_password_placeholder: "Entrez votre mot de passe",
+    login_btn: "Se connecter",
+    login_footer: "Accès sécurisé · Toutes les sessions sont protégées",
+    err_username_password_required: "Veuillez saisir le nom d'utilisateur et le mot de passe.",
+    err_invalid_credentials: "Nom d'utilisateur ou mot de passe invalide.",
+    err_session_expired: "Session expirée ou invalide.",
+    err_current_password_incorrect: "Le mot de passe actuel est incorrect.",
+    err_new_password_too_short: "Le nouveau mot de passe doit comporter au moins 6 caractères.",
+    err_business_vehicle_required: "Violation de règle métier : L'immatriculation du véhicule est obligatoire pour tout contrat.",
+    err_business_license_required: "Violation de règle métier : Le numéro de licence est obligatoire.",
+    err_cannot_restore_associated_deleted: "Impossible de restaurer la licence : Le véhicule ou l'entreprise associé est manquant ou supprimé.",
+    err_endpoint_not_found: "Point de terminaison introuvable",
+    err_cannot_reach_server: "Impossible de contacter le serveur. Veuillez vous assurer que l'application est en cours d'exécution.",
+    expiring_in: "Expire dans",
+    days_forecast: "prévision basée sur les contrats actifs",
+    expiring_in_forecast_label: "Prévision automatisée basée sur les contrats actifs actuels et leurs dates d'expiration respectives.",
+    edit_contract_title: "Modifier le contrat",
+    loading: "Chargement...",
+    days: "jours",
+    signing_date: "Date de signature",
+    company_carrier_name: "Nom complet du transporteur/entreprise",
+    registration_code: "Code d'enregistrement",
+    vehicle_registration_number: "Numéro d'immatriculation du véhicule",
+    vehicle_type_category: "Type et catégorie du véhicule",
+    route: "Itinéraire (de Point A à Point B)",
+    license_expiry_date: "Date d'expiration de la licence",
+    transported_materials: "Matières transportées",
   },
 
   ar: {
@@ -499,14 +603,90 @@ const TRANSLATIONS = {
     saved_ok:       "تم حفظ العقد بنجاح!",
     deleted_ok:     "تم حذف السجل.",
     settings_saved: "تم حفظ الإعدادات.",
+
+    // Added for localization and consistency
+    app_title: "نظام إدارة تراخيص نقل المواد الخطرة",
+    change_password: "تغيير كلمة المرور",
+    btn_change_password: "تغيير كلمة المرور",
+    lbl_username: "اسم المستخدم",
+    lbl_current_password: "كلمة المرور الحالية",
+    lbl_new_password: "كلمة المرور الجديدة",
+    password_changed: "تم تغيير كلمة المرور بنجاح.",
+    password_change_failed: "فشل تغيير كلمة المرور.",
+    try_adjust_filter: "جرّب تعديل عوامل التصفية أو مصطلحات البحث",
+    btn_add_new: "إضافة عقد جديد",
+    col_id: "المعرف",
+    select_address: "اختر العنوان (البلدية)",
+    welcome_title: "مرحباً بك في نظام إدارة تراخيص نقل المواد الخطرة",
+    welcome_desc: "مركزك الرئيسي لإدارة وتتبع تراخيص نقل المواد الخطرة.",
+    welcome_add_desc: "ابدأ عملية إصدار ترخيص جديد.",
+    welcome_search_desc: "ابحث عن العقود والتراخيص الحالية بسرعة.",
+    welcome_view_stats_desc: "انتقل إلى لوحة التحكم للتحليلات والرؤى.",
+    system_status: "حالة النظام",
+    all_systems_operational: "جميع الأنظمة تعمل بشكل طبيعي.",
+    login_title: "تسجيل الدخول — نظام إدارة التراخيص",
+    login_heading: "مرحباً بعودتك",
+    login_subheading: "قم بتسجيل الدخول للوصول إلى نظام الإدارة.",
+    login_username_placeholder: "أدخل اسم المستخدم",
+    login_password_placeholder: "أدخل كلمة المرور",
+    login_btn: "تسجيل الدخول",
+    login_footer: "وصول آمن · جميع الجلسات محمية",
+    err_username_password_required: "يرجى إدخال اسم المستخدم وكلمة المرور.",
+    err_invalid_credentials: "اسم المستخدم أو كلمة المرور غير صالحة.",
+    err_session_expired: "انتهت صلاحية الجلسة أو أنها غير صالحة.",
+    err_current_password_incorrect: "كلمة المرور الحالية غير صحيحة.",
+    err_new_password_too_short: "يجب أن تتكون كلمة المرور الجديدة من 6 أحرف على الأقل.",
+    err_business_vehicle_required: "مخالفة لقواعد العمل: رقم تسجيل المركبة إلزامي لأي عقد.",
+    err_business_license_required: "مخالفة لقواعد العمل: رقم الترخيص إلزامي.",
+    err_cannot_restore_associated_deleted: "لا يمكن استرجاع الترخيص: المركبة أو الشركة المرتبطة به مفقودة أو محذوفة.",
+    err_endpoint_not_found: "نقطة النهاية غير موجودة",
+    err_cannot_reach_server: "تعذر الاتصال بالخادم. يرجى التأكد من تشغيل التطبيق.",
+    expiring_in: "تنتهي صلاحيته خلال",
+    days_forecast: "توقعات بناءً على العقود النشطة",
+    expiring_in_forecast_label: "توقعات تلقائية بناءً على العقود النشطة الحالية وتواريخ انتهائها.",
+    edit_contract_title: "تعديل العقد",
+    loading: "جار التحميل...",
+    days: "يوم",
+    signing_date: "تاريخ التوقيع",
+    company_carrier_name: "الاسم الكامل للناقل/الشركة",
+    registration_code: "رمز التسجيل",
+    vehicle_registration_number: "رقم تسجيل المركبة",
+    vehicle_type_category: "نوع وفئة المركبة",
+    route: "المسار (من النقطة أ إلى النقطة ب)",
+    license_expiry_date: "تاريخ انتهاء الترخيص",
+    transported_materials: "المواد المنقولة",
   }
 };
 
 // Current language state
 let currentLang = localStorage.getItem("lang") || "ar";
 
+// Error messages translation mapping
+const ERROR_MAPPINGS = {
+  "Username and password are required.": "err_username_password_required",
+  "Invalid username or password.": "err_invalid_credentials",
+  "Session expired or invalid.": "err_session_expired",
+  "Current password is incorrect.": "err_current_password_incorrect",
+  "New password must be at least 6 characters.": "err_new_password_too_short",
+  "Business Rule Violation: Vehicle registration is mandatory for any contract.": "err_business_vehicle_required",
+  "Business Rule Violation: License number is mandatory.": "err_business_license_required",
+  "Cannot restore license: Associated vehicle or company is missing or deleted.": "err_cannot_restore_associated_deleted",
+  "Endpoint not found": "err_endpoint_not_found",
+  "Cannot reach the server. Please ensure the application is running.": "err_cannot_reach_server"
+};
+
 function t(key) {
   return (TRANSLATIONS[currentLang] || TRANSLATIONS.en)[key] || key;
+}
+
+/**
+ * Translates a backend/system error message to the currently active language.
+ * Falls back to the original message if no translation mapping exists.
+ */
+function translateError(msg) {
+  if (!msg) return msg;
+  const key = ERROR_MAPPINGS[msg] || msg;
+  return t(key);
 }
 
 function setLanguage(lang) {
@@ -516,12 +696,9 @@ function setLanguage(lang) {
   applyLanguage();
 }
 
-function applyLanguage() {
-  const tr = TRANSLATIONS[currentLang];
-  document.documentElement.lang = currentLang;
-  document.body.dir = tr.dir;
-  // Update all [data-i18n] elements
-  document.querySelectorAll("[data-i18n]").forEach(el => {
+function applyLanguageToContainer(container) {
+  if (!container) return;
+  container.querySelectorAll("[data-i18n]").forEach(el => {
     const key = el.getAttribute("data-i18n");
     if (el.hasAttribute("placeholder")) {
       el.placeholder = t(key);
@@ -529,10 +706,27 @@ function applyLanguage() {
       el.textContent = t(key);
     }
   });
-  // Update [data-i18n-ph]
-  document.querySelectorAll("[data-i18n-ph]").forEach(el => {
+  container.querySelectorAll("[data-i18n-ph]").forEach(el => {
     el.placeholder = t(el.getAttribute("data-i18n-ph"));
   });
+}
+
+function applyLanguage() {
+  const tr = TRANSLATIONS[currentLang];
+  document.documentElement.lang = currentLang;
+  document.body.dir = tr.dir;
+  
+  // Set layout direction on the main html element to style RTL appropriately
+  document.documentElement.dir = tr.dir;
+
+  // Update window/page title dynamically based on localization
+  const pageTitleKey = document.documentElement.getAttribute("data-page-title-key") || 
+                       (window.location.pathname.includes("login.html") ? "login_title" : "app_title");
+  if (tr[pageTitleKey]) {
+    document.title = t(pageTitleKey);
+  }
+
+  applyLanguageToContainer(document);
   // Notify app to refresh active page
   document.dispatchEvent(new Event("langchange"));
 }

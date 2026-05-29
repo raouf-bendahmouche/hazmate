@@ -9,8 +9,10 @@ sequenceDiagram
     participant SQLite as licenses.db
 
     User->>UI: fill form and submit contract-form
-    UI->>Client: API.createLicense(data)
+    Note over UI: UI validates inputs (touched checks)<br/>and maps clean fields to legacy payload
+    UI->>Client: API.createLicense(payload)
     Client->>API: POST /api/licenses
+    Note over API: API maps clean fields to legacy dict<br/>(if backend fallback is triggered)
     API->>DB: get_license_by_number() / get_license_by_record_number()
     API->>Service: create_complete_license(data)
     Service->>Rules: validate_license_creation(data)
