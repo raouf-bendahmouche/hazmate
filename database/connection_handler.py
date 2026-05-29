@@ -362,14 +362,18 @@ class Database:
         cursor = conn.cursor()
 
         # Whitelist sort columns
-        allowed_sorts = {"signature_date", "expiration_date", "created_at"}
+        allowed_sorts = {"signature_date", "expiration_date", "created_at", "company_name"}
         if sort_by not in allowed_sorts:
             sort_by = "created_at"
+        sort_col = f"l.{sort_by}"
+        if sort_by == "company_name":
+            sort_col = "c.name"
         sort_dir = "ASC" if sort_dir.upper() == "ASC" else "DESC"
 
         base = """FROM licenses l
                   JOIN vehicles v ON l.vehicle_id = v.id
                   JOIN companies c ON v.company_id = c.id
+                  LEFT JOIN routes r ON l.route_id = r.id
                   WHERE l.is_deleted=0"""
         params = []
 
@@ -401,13 +405,15 @@ class Database:
 
         # Data query
         offset = (page - 1) * limit
-        select = f"""SELECT l.id, l.record_number, l.license_number, l.driver_name, l.driver_phone,
+        select = f"""SELECT l.id, l.record_number, l.license_number,
                             l.signature_date, l.expiration_date, l.status,
                             l.activity_location, l.contract_type, l.deletion_days, l.created_at,
-                            v.registration_number AS vehicle_reg,
-                            c.name AS company_name, c.carrier_type
+                            v.registration_number AS vehicle_reg, v.type AS vehicle_type, v.category AS vehicle_category,
+                            c.name AS company_name, c.carrier_type, c.registration_number AS company_reg, c.address AS company_address,
+                            r.origin AS route_origin, r.destination AS route_dest,
+                            (SELECT GROUP_CONCAT(material_type, ', ') FROM hazardous_materials WHERE vehicle_id = v.id AND is_deleted = 0) AS hazmat_type
                      {base}
-                     ORDER BY l.{sort_by} {sort_dir}
+                     ORDER BY {sort_col} {sort_dir}
                      LIMIT ? OFFSET ?"""
         cursor.execute(select, params + [limit, offset])
         rows = cursor.fetchall()
@@ -415,14 +421,24 @@ class Database:
         return {"total": total, "page": page, "limit": limit, "records": [dict(r) for r in rows]}
 
     def search_deleted_licenses(self, search_term="", status_filter=None, activity_location=None,
-                               contract_type=None, page=1, limit=50):
+                               contract_type=None, sort_by="created_at", sort_dir="DESC", page=1, limit=50):
         """Paginated search over deleted contracts only."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
+        # Whitelist sort columns
+        allowed_sorts = {"signature_date", "expiration_date", "created_at", "company_name"}
+        if sort_by not in allowed_sorts:
+            sort_by = "created_at"
+        sort_col = f"l.{sort_by}"
+        if sort_by == "company_name":
+            sort_col = "c.name"
+        sort_dir = "ASC" if sort_dir.upper() == "ASC" else "DESC"
+
         base = """FROM licenses l
                   JOIN vehicles v ON l.vehicle_id = v.id
                   JOIN companies c ON v.company_id = c.id
+                  LEFT JOIN routes r ON l.route_id = r.id
                   WHERE l.is_deleted=1"""
         params = []
 
@@ -448,13 +464,15 @@ class Database:
         total = cursor.fetchone()[0]
 
         offset = (page - 1) * limit
-        query = f"""SELECT l.id, l.record_number, l.license_number, l.driver_name, l.driver_phone,
+        query = f"""SELECT l.id, l.record_number, l.license_number,
                            l.signature_date, l.expiration_date, l.status,
                            l.activity_location, l.contract_type, l.deletion_days, l.created_at,
-                           v.registration_number AS vehicle_reg,
-                           c.name AS company_name, c.carrier_type
+                           v.registration_number AS vehicle_reg, v.type AS vehicle_type, v.category AS vehicle_category,
+                           c.name AS company_name, c.carrier_type, c.registration_number AS company_reg, c.address AS company_address,
+                           r.origin AS route_origin, r.destination AS route_dest,
+                           (SELECT GROUP_CONCAT(material_type, ', ') FROM hazardous_materials WHERE vehicle_id = v.id AND is_deleted = 0) AS hazmat_type
                     {base}
-                    ORDER BY l.created_at DESC
+                    ORDER BY {sort_col} {sort_dir}
                     LIMIT ? OFFSET ?"""
         cursor.execute(query, params + [limit, offset])
         rows = cursor.fetchall()
@@ -612,23 +630,17 @@ class Database:
         self._update_expired_licenses()
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM vehicles WHERE is_deleted=0")
-        total_vehicles = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(DISTINCT driver_name) FROM licenses WHERE driver_name IS NOT NULL AND is_deleted=0")
-        total_drivers = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM licenses WHERE status='active' AND is_deleted=0")
         active_licenses = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM licenses WHERE status='expired' AND is_deleted=0")
         expired_licenses = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM companies WHERE is_deleted=0")
-        total_companies = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM licenses WHERE is_deleted=0")
+        total_contracts = cursor.fetchone()[0]
         conn.close()
         result = {
-            "total_vehicles": total_vehicles,
-            "total_drivers": total_drivers,
             "active_licenses": active_licenses,
             "expired_licenses": expired_licenses,
-            "total_companies": total_companies,
+            "total_contracts": total_contracts,
         }
         with self._stats_cache_lock:
             self._stats_cache = result

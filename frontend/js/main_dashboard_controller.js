@@ -38,6 +38,43 @@ function debounce(func, wait) {
     };
 }
 
+let setifCommunesData = null;
+
+async function fetchCommunes() {
+    if (setifCommunesData) return setifCommunesData;
+    try {
+        const resp = await fetch('./data/setif_communes.json');
+        if (resp.ok) {
+            setifCommunesData = await resp.json();
+            return setifCommunesData;
+        }
+    } catch (e) {
+        console.error("Failed to load communes:", e);
+    }
+    return null;
+}
+
+async function populateCommunesSelect(selectEl, selectedValue = '', isFilter = false) {
+    if (!selectEl) return;
+    const data = await fetchCommunes();
+    if (!data || !data.communes) return;
+
+    selectEl.innerHTML = isFilter 
+        ? `<option value="">${t('opt_all')}</option>`
+        : `<option value="">${t('select_address')}</option>`;
+
+    data.communes.forEach(commune => {
+        const opt = document.createElement('option');
+        const val = isFilter ? commune : `${commune}, ${data.wilaya}`;
+        opt.value = val;
+        opt.textContent = isFilter ? commune : `${commune} (${data.wilaya})`;
+        if (val === selectedValue || (isFilter && val.toLowerCase() === selectedValue.toLowerCase())) {
+            opt.selected = true;
+        }
+        selectEl.appendChild(opt);
+    });
+}
+
 // ── Initialization ───────────────────────────────────────────
 
 async function init() {
@@ -263,7 +300,7 @@ async function renderDashboard() {
                             <thead>
                                 <tr>
                                     <th>${t('col_license')}</th>
-                                    <th>${t('col_driver')}</th>
+                                    <th>${t('company_name')}</th>
                                     <th>${t('col_expiry')}</th>
                                 </tr>
                             </thead>
@@ -271,7 +308,7 @@ async function renderDashboard() {
                                 ${expiring.map(ex => `
                                     <tr>
                                         <td>${ex.license_number}</td>
-                                        <td>${ex.driver_name}</td>
+                                        <td>${ex.company_name}</td>
                                         <td><span class="badge badge-amber">${ex.expiration_date}</span></td>
                                     </tr>
                                 `).join('')}
@@ -329,18 +366,11 @@ async function renderDashboard() {
                         <div class="stat-label">${t('stat_expired')}</div>
                     </div>
                 </div>
-                <div class="stat-card" style="border-top: 4px solid var(--info)">
-                    <div class="stat-icon blue">🚚</div>
-                    <div class="stat-info">
-                        <div class="stat-value">${stats.total_vehicles}</div>
-                        <div class="stat-label">${t('stat_vehicles')}</div>
-                    </div>
-                </div>
                 <div class="stat-card" style="border-top: 4px solid var(--success)">
-                    <div class="stat-icon green">👤</div>
+                    <div class="stat-icon green">📋</div>
                     <div class="stat-info">
-                        <div class="stat-value">${stats.total_drivers}</div>
-                        <div class="stat-label">${t('stat_drivers')}</div>
+                        <div class="stat-value">${stats.total_contracts}</div>
+                        <div class="stat-label">${t('stat_total_contracts')}</div>
                     </div>
                 </div>
             </div>
@@ -456,8 +486,8 @@ async function renderSettings() {
 
 // ── Search Page ──────────────────────────────────────────────
 
-let searchParams = { page: 1, limit: 50, search: '', status: '', carrier: '', activity_location: '', contract_type: '' };
-let deletedSearchParams = { page: 1, limit: 50, search: '', status: '', activity_location: '', contract_type: '' };
+let searchParams = { page: 1, limit: 50, search: '', status: '', carrier: '', activity_location: '', contract_type: '', sort_by: 'signature_date', sort_dir: 'DESC' };
+let deletedSearchParams = { page: 1, limit: 50, search: '', status: '', activity_location: '', contract_type: '', sort_by: 'signature_date', sort_dir: 'DESC' };
 
 async function renderSearch() {
     el.content.innerHTML = `
@@ -478,7 +508,9 @@ async function renderSearch() {
                     </div>
                     <div style="width: 150px">
                         <label>${t('lbl_location')}</label>
-                        <input type="text" class="form-control" id="filter-location" value="${searchParams.activity_location}">
+                        <select class="form-control" id="filter-location">
+                            <!-- Populated dynamically -->
+                        </select>
                     </div>
                     <div style="width: 150px">
                         <label>${t('lbl_ctype')}</label>
@@ -486,6 +518,15 @@ async function renderSearch() {
                             <option value="">${t('opt_all')}</option>
                             <option value="Public" ${searchParams.contract_type === 'Public' ? 'selected' : ''}>${t('opt_public')}</option>
                             <option value="Private" ${searchParams.contract_type === 'Private' ? 'selected' : ''}>${t('opt_private')}</option>
+                        </select>
+                    </div>
+                    <div style="width: 150px">
+                        <label>${t('lbl_sort')}</label>
+                        <select class="form-control" id="filter-sort">
+                            <option value="signature_date|ASC" ${searchParams.sort_by === 'signature_date' && searchParams.sort_dir === 'ASC' ? 'selected' : ''}>${t('sort_oldest')}</option>
+                            <option value="signature_date|DESC" ${searchParams.sort_by === 'signature_date' && searchParams.sort_dir === 'DESC' ? 'selected' : ''}>${t('sort_newest')}</option>
+                            <option value="company_name|ASC" ${searchParams.sort_by === 'company_name' && searchParams.sort_dir === 'ASC' ? 'selected' : ''}>${t('sort_alpha_asc')}</option>
+                            <option value="company_name|DESC" ${searchParams.sort_by === 'company_name' && searchParams.sort_dir === 'DESC' ? 'selected' : ''}>${t('sort_alpha_desc')}</option>
                         </select>
                     </div>
                     <div class="d-flex align-center gap-8 mt-16">
@@ -500,48 +541,61 @@ async function renderSearch() {
             <table id="results-table">
                 <thead>
                     <tr>
-                        <th>${t('col_record')}</th>
-                        <th>${t('col_license')}</th>
-                        <th>${t('col_driver')}</th>
-                        <th>${t('col_vehicle')}</th>
-                        <th>${t('col_company')}</th>
-                        <th>${t('col_location')}</th>
-                        <th>${t('col_expiry')}</th>
+                        <th>${t('col_record')} / ${t('license_number')}</th>
+                        <th>${t('signing_date')}</th>
+                        <th>${t('company_carrier_name')}</th>
+                        <th>${t('registration_code')}</th>
+                        <th>${t('company_address')}</th>
+                        <th>${t('vehicle_registration_number')}</th>
+                        <th>${t('vehicle_type_category')}</th>
+                        <th>${t('route')}</th>
+                        <th>${t('license_expiry_date')}</th>
+                        <th>${t('carrier_type')}</th>
+                        <th>${t('transported_materials')}</th>
                         <th>${t('col_status')}</th>
                         <th>${t('col_actions')}</th>
                     </tr>
                 </thead>
                 <tbody id="results-body">
-                    <tr><td colspan="9" class="text-center"><div class="spinner"></div></td></tr>
+                    <tr><td colspan="13" class="text-center"><div class="spinner"></div></td></tr>
                 </tbody>
             </table>
         </div>
         <div id="pagination" class="pagination"></div>
     `;
 
+    const filterLocation = document.getElementById('filter-location');
+    await populateCommunesSelect(filterLocation, searchParams.activity_location, true);
+
     const searchInput = document.getElementById('search-input');
     const filterStatus = document.getElementById('filter-status');
-    const filterLocation = document.getElementById('filter-location');
     const filterCtype = document.getElementById('filter-ctype');
+    const filterSort = document.getElementById('filter-sort');
 
-    const triggerSearch = debounce(() => {
+    const triggerSearch = () => {
         searchParams.search = searchInput.value;
         searchParams.status = filterStatus.value;
         searchParams.activity_location = filterLocation.value;
         searchParams.contract_type = filterCtype.value;
+        
+        const [sort_by, sort_dir] = filterSort.value.split('|');
+        searchParams.sort_by = sort_by;
+        searchParams.sort_dir = sort_dir;
+        
         searchParams.page = 1;
         loadSearchResults();
-    }, 400);
+    };
 
-    searchInput.oninput = triggerSearch;
+    searchInput.oninput = debounce(triggerSearch, 400);
     filterStatus.onchange = triggerSearch;
-    filterLocation.oninput = triggerSearch;
+    filterLocation.onchange = triggerSearch;
     filterCtype.onchange = triggerSearch;
+    filterSort.onchange = triggerSearch;
 
     document.getElementById('btn-search').onclick = triggerSearch;
 
     document.getElementById('btn-reset').onclick = () => {
-        searchParams = { page: 1, limit: 50, search: '', status: '', carrier: '', activity_location: '', contract_type: '' };
+        searchParams = { page: 1, limit: 50, search: '', status: '', carrier: '', activity_location: '', contract_type: '', sort_by: 'signature_date', sort_dir: 'DESC' };
         renderSearch();
     };
 
@@ -558,7 +612,7 @@ async function loadSearchResults() {
         if (result.records.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="9">
+                    <td colspan="13">
                         <div class="empty-state">
                             <div class="empty-icon">📂</div>
                             <h3>${t('no_records') || 'No records found'}</h3>
@@ -574,13 +628,17 @@ async function loadSearchResults() {
 
         tbody.innerHTML = result.records.map(r => `
             <tr>
-                <td>${r.record_number}</td>
-                <td>${r.license_number}</td>
-                <td>${r.driver_name}</td>
-                <td>${r.vehicle_reg}</td>
+                <td>${r.record_number} / ${r.license_number}</td>
+                <td>${r.signature_date || '-'}</td>
                 <td>${r.company_name}</td>
-                <td>${r.activity_location || '-'}</td>
+                <td>${r.company_reg || '-'}</td>
+                <td>${r.company_address || '-'}</td>
+                <td>${r.vehicle_reg}</td>
+                <td>${r.vehicle_type || ''} ${r.vehicle_category || ''}</td>
+                <td>${r.route_origin || ''} ${r.route_dest ? '→ ' + r.route_dest : ''}</td>
                 <td>${r.expiration_date}</td>
+                <td>${t('opt_' + r.carrier_type.toLowerCase()) || r.carrier_type}</td>
+                <td>${r.hazmat_type || '-'}</td>
                 <td><span class="badge ${r.status === 'active' ? 'badge-green' : 'badge-red'}">${t('opt_' + r.status)}</span></td>
                 <td>
                     <div class="d-flex gap-8">
@@ -625,7 +683,7 @@ async function loadSearchResults() {
             </div>
         `;
     } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="9" class="error-state">${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="13" class="error-state">${err.message}</td></tr>`;
     }
 }
 
@@ -645,7 +703,7 @@ async function renderDeletedContracts() {
                         <span class="search-icon">🔍</span>
                         <input type="text" class="form-control" id="deleted-search-input" placeholder="${t('search_ph')}" value="${deletedSearchParams.search}">
                     </div>
-                    <div style="width: 180px">
+                    <div style="width: 150px">
                         <label>${t('deleted_status_filter')}</label>
                         <select class="form-control" id="deleted-filter-status">
                             <option value="">${t('opt_all')}</option>
@@ -653,16 +711,27 @@ async function renderDeletedContracts() {
                             <option value="expired" ${deletedSearchParams.status === 'expired' ? 'selected' : ''}>${t('opt_expired')}</option>
                         </select>
                     </div>
-                    <div style="width: 180px">
+                    <div style="width: 150px">
                         <label>${t('lbl_location')}</label>
-                        <input type="text" class="form-control" id="deleted-filter-location" value="${deletedSearchParams.activity_location}">
+                        <select class="form-control" id="deleted-filter-location">
+                            <!-- Populated dynamically -->
+                        </select>
                     </div>
-                    <div style="width: 180px">
+                    <div style="width: 150px">
                         <label>${t('lbl_ctype')}</label>
                         <select class="form-control" id="deleted-filter-ctype">
                             <option value="">${t('opt_all')}</option>
                             <option value="Public" ${deletedSearchParams.contract_type === 'Public' ? 'selected' : ''}>${t('opt_public')}</option>
                             <option value="Private" ${deletedSearchParams.contract_type === 'Private' ? 'selected' : ''}>${t('opt_private')}</option>
+                        </select>
+                    </div>
+                    <div style="width: 150px">
+                        <label>${t('lbl_sort')}</label>
+                        <select class="form-control" id="deleted-filter-sort">
+                            <option value="signature_date|ASC" ${deletedSearchParams.sort_by === 'signature_date' && deletedSearchParams.sort_dir === 'ASC' ? 'selected' : ''}>${t('sort_oldest')}</option>
+                            <option value="signature_date|DESC" ${deletedSearchParams.sort_by === 'signature_date' && deletedSearchParams.sort_dir === 'DESC' ? 'selected' : ''}>${t('sort_newest')}</option>
+                            <option value="company_name|ASC" ${deletedSearchParams.sort_by === 'company_name' && deletedSearchParams.sort_dir === 'ASC' ? 'selected' : ''}>${t('sort_alpha_asc')}</option>
+                            <option value="company_name|DESC" ${deletedSearchParams.sort_by === 'company_name' && deletedSearchParams.sort_dir === 'DESC' ? 'selected' : ''}>${t('sort_alpha_desc')}</option>
                         </select>
                     </div>
                     <div class="d-flex align-center gap-8 mt-16">
@@ -677,36 +746,61 @@ async function renderDeletedContracts() {
             <table>
                 <thead>
                     <tr>
-                        <th>${t('col_id')}</th>
-                        <th>${t('col_record')}</th>
-                        <th>${t('col_license')}</th>
-                        <th>${t('col_driver')}</th>
-                        <th>${t('col_vehicle')}</th>
-                        <th>${t('col_company')}</th>
-                        <th>${t('col_location')}</th>
+                        <th>${t('col_record')} / ${t('license_number')}</th>
+                        <th>${t('signing_date')}</th>
+                        <th>${t('company_carrier_name')}</th>
+                        <th>${t('registration_code')}</th>
+                        <th>${t('company_address')}</th>
+                        <th>${t('vehicle_registration_number')}</th>
+                        <th>${t('vehicle_type_category')}</th>
+                        <th>${t('route')}</th>
+                        <th>${t('license_expiry_date')}</th>
+                        <th>${t('carrier_type')}</th>
+                        <th>${t('transported_materials')}</th>
                         <th>${t('col_status')}</th>
                         <th>${t('col_actions')}</th>
                     </tr>
                 </thead>
                 <tbody id="deleted-results-body">
-                    <tr><td colspan="9" class="text-center"><div class="spinner"></div></td></tr>
+                    <tr><td colspan="13" class="text-center"><div class="spinner"></div></td></tr>
                 </tbody>
             </table>
         </div>
         <div id="deleted-pagination" class="pagination"></div>
     `;
 
-    document.getElementById('btn-deleted-search').onclick = () => {
-        deletedSearchParams.search = document.getElementById('deleted-search-input').value;
-        deletedSearchParams.status = document.getElementById('deleted-filter-status').value;
-        deletedSearchParams.activity_location = document.getElementById('deleted-filter-location').value;
-        deletedSearchParams.contract_type = document.getElementById('deleted-filter-ctype').value;
+    const filterLocation = document.getElementById('deleted-filter-location');
+    await populateCommunesSelect(filterLocation, deletedSearchParams.activity_location, true);
+
+    const searchInput = document.getElementById('deleted-search-input');
+    const filterStatus = document.getElementById('deleted-filter-status');
+    const filterCtype = document.getElementById('deleted-filter-ctype');
+    const filterSort = document.getElementById('deleted-filter-sort');
+
+    const triggerSearch = () => {
+        deletedSearchParams.search = searchInput.value;
+        deletedSearchParams.status = filterStatus.value;
+        deletedSearchParams.activity_location = filterLocation.value;
+        deletedSearchParams.contract_type = filterCtype.value;
+        
+        const [sort_by, sort_dir] = filterSort.value.split('|');
+        deletedSearchParams.sort_by = sort_by;
+        deletedSearchParams.sort_dir = sort_dir;
+        
         deletedSearchParams.page = 1;
         loadDeletedResults();
     };
 
+    searchInput.oninput = debounce(triggerSearch, 400);
+    filterStatus.onchange = triggerSearch;
+    filterLocation.onchange = triggerSearch;
+    filterCtype.onchange = triggerSearch;
+    filterSort.onchange = triggerSearch;
+
+    document.getElementById('btn-deleted-search').onclick = triggerSearch;
+
     document.getElementById('btn-deleted-reset').onclick = () => {
-        deletedSearchParams = { page: 1, limit: 50, search: '', status: '', activity_location: '', contract_type: '' };
+        deletedSearchParams = { page: 1, limit: 50, search: '', status: '', activity_location: '', contract_type: '', sort_by: 'signature_date', sort_dir: 'DESC' };
         renderDeletedContracts();
     };
 
@@ -720,20 +814,24 @@ async function loadDeletedResults() {
     try {
         const result = await API.getDeletedLicenses(deletedSearchParams);
         if (result.records.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${t('no_deleted_records')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="13" class="empty-state">${t('no_deleted_records')}</td></tr>`;
             pagination.innerHTML = '';
             return;
         }
 
         tbody.innerHTML = result.records.map(r => `
             <tr>
-                <td>${r.id}</td>
-                <td>${r.record_number}</td>
-                <td>${r.license_number}</td>
-                <td>${r.driver_name}</td>
-                <td>${r.vehicle_reg}</td>
+                <td>${r.record_number} / ${r.license_number}</td>
+                <td>${r.signature_date || '-'}</td>
                 <td>${r.company_name}</td>
-                <td>${r.activity_location || '-'}</td>
+                <td>${r.company_reg || '-'}</td>
+                <td>${r.company_address || '-'}</td>
+                <td>${r.vehicle_reg}</td>
+                <td>${r.vehicle_type || ''} ${r.vehicle_category || ''}</td>
+                <td>${r.route_origin || ''} ${r.route_dest ? '→ ' + r.route_dest : ''}</td>
+                <td>${r.expiration_date}</td>
+                <td>${t('opt_' + r.carrier_type.toLowerCase()) || r.carrier_type}</td>
+                <td>${r.hazmat_type || '-'}</td>
                 <td><span class="badge ${r.status === 'active' ? 'badge-green' : 'badge-red'}">${t('opt_' + r.status)}</span></td>
                 <td>
                     <button class="btn btn-sm btn-primary restore-btn" data-id="${r.id}">${t('btn_restore')}</button>
@@ -765,7 +863,7 @@ async function loadDeletedResults() {
             </div>
         `;
     } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="9" class="error-state">${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="13" class="error-state">${err.message}</td></tr>`;
     }
 }
 
@@ -1263,24 +1361,8 @@ async function renderAddContract() {
         document.getElementById('contract-form').addEventListener('submit', handleFormSubmit);
 
         // Populate company address options from Setif communes JSON
-        try {
-            const resp = await fetch('./data/setif_communes.json');
-            if (resp.ok) {
-                const data = await resp.json();
-                const select = document.querySelector('select[name="company_address"]');
-                if (select && data.communes) {
-                    select.innerHTML = `<option value="">${t('select_address')}</option>`;
-                    data.communes.forEach(commune => {
-                        const opt = document.createElement('option');
-                        opt.value = `${commune}, ${data.wilaya}`;
-                        opt.textContent = `${commune} (${data.wilaya})`;
-                        select.appendChild(opt);
-                    });
-                }
-            }
-        } catch (e) {
-            console.error("Failed to load address communes:", e);
-        }
+        const select = document.querySelector('select[name="company_address"]');
+        await populateCommunesSelect(select, '');
     } catch (err) {
         el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
         showToast(err.message, 'error');
@@ -1522,12 +1604,26 @@ async function openEditModal(id) {
                         <input type="date" class="form-control" name="expiration_date" value="${data.expiration_date}">
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>${t('activity_location')}</label>
-                    <input type="text" class="form-control" name="activity_location" value="${data.activity_location || ''}">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>${t('activity_location')}</label>
+                        <select class="form-control" name="activity_location">
+                            <!-- Populated dynamically -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>${t('carrier_type')}</label>
+                        <select class="form-control" name="contract_type">
+                            <option value="Public" ${data.contract_type === 'Public' ? 'selected' : ''}>${t('opt_public')}</option>
+                            <option value="Private" ${data.contract_type === 'Private' ? 'selected' : ''}>${t('opt_private')}</option>
+                        </select>
+                    </div>
                 </div>
             </form>
         `;
+
+        const select = body.querySelector('select[name="activity_location"]');
+        await populateCommunesSelect(select, data.activity_location, true);
 
         modal.classList.remove('hidden');
 

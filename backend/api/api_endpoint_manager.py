@@ -103,7 +103,7 @@ auth_service = AuthService(db)
 app.include_router(create_auth_router(auth_service))
 
 
-def _extract_token_from_header(authorization: str | None) -> str | None:
+def _extract_token_from_header(authorization: Optional[str]) -> Optional[str]:
     if not authorization:
         return None
     if authorization.lower().startswith("bearer "):
@@ -111,7 +111,7 @@ def _extract_token_from_header(authorization: str | None) -> str | None:
     return None
 
 
-def _require_auth(authorization: str | None):
+def _require_auth(authorization: Optional[str]):
     token = _extract_token_from_header(authorization)
     username = auth_service.validate_token(token) if token else None
     if not username:
@@ -157,8 +157,6 @@ class LicenseCreate(BaseModel):
     vehicle_reg: str
     record_number: str
     license_number: Optional[str] = ""
-    driver_name: Optional[str] = ""
-    driver_phone: Optional[str] = ""
     company_reg: Optional[str] = ""
     company_address: Optional[str] = ""
     carrier_type: Optional[str] = "Public"
@@ -178,8 +176,6 @@ class LicenseCreate(BaseModel):
     route: Optional[str] = ""
 
 class LicenseUpdate(BaseModel):
-    driver_name: Optional[str] = None
-    driver_phone: Optional[str] = None
     license_number: Optional[str] = None
     record_number: Optional[str] = None
     signature_date: Optional[str] = None
@@ -259,8 +255,9 @@ async def list_licenses(
 
 
 @app.post("/api/licenses/{license_id}/renew")
-async def renew_license(license_id: int, request: Request):
+async def renew_license(license_id: int, request: Request, authorization: Optional[str] = Header(None)):
     """Renew an expired license. Accepts either `extend_days` (int) or `new_expiration_date` (YYYY-MM-DD)."""
+    _require_auth(authorization)
     d = await request.json()
     extend_days = d.get("extend_days")
     new_date = d.get("new_expiration_date")
@@ -293,8 +290,9 @@ async def renew_license(license_id: int, request: Request):
 
 
 @app.post("/api/licenses/{license_id}/suspend")
-async def suspend_license(license_id: int, request: Request):
+async def suspend_license(license_id: int, request: Request, authorization: Optional[str] = Header(None)):
     """Suspend or stop a license. Body: { action: 'suspend'|'stop' }"""
+    _require_auth(authorization)
     d = await request.json()
     action = (d.get("action") or "").strip().lower()
     if action not in ("suspend", "stop"):
@@ -351,41 +349,33 @@ def map_clean_to_legacy_dict(data: dict) -> dict:
         data["license_number"] = f"LIC-{data['record_number']}"
         
     # Split vehicle_type_category if present
-    if "vehicle_type_category" in data:
-        type_cat = (data.pop("vehicle_type_category") or "").strip()
-        if type_cat:
-            parts = type_cat.split(None, 1)
-            data["vehicle_type"] = parts[0]
-            data["vehicle_category"] = parts[1] if len(parts) > 1 else ""
-        else:
-            data["vehicle_type"] = ""
-            data["vehicle_category"] = ""
+    if data.get("vehicle_type_category"):
+        type_cat = data.pop("vehicle_type_category").strip()
+        parts = type_cat.split(None, 1)
+        data["vehicle_type"] = parts[0]
+        data["vehicle_category"] = parts[1] if len(parts) > 1 else ""
+    elif "vehicle_type_category" in data:
+        data.pop("vehicle_type_category")
             
     # Split route if present
-    if "route" in data:
-        route = (data.pop("route") or "").strip()
-        if route:
-            parts = re.split(r"→|->", route)
-            data["route_origin"] = parts[0].strip()
-            data["route_dest"] = parts[1].strip() if len(parts) > 1 else ""
-        else:
-            data["route_origin"] = ""
-            data["route_dest"] = ""
+    if data.get("route"):
+        route = data.pop("route").strip()
+        parts = re.split(r"→|->", route)
+        data["route_origin"] = parts[0].strip()
+        data["route_dest"] = parts[1].strip() if len(parts) > 1 else ""
+    elif "route" in data:
+        data.pop("route")
             
     return data
 
 @app.post("/api/licenses", status_code=201)
-async def create_license(d: LicenseCreate):
+async def create_license(d: LicenseCreate, authorization: Optional[str] = Header(None)):
     """
     Create a complete license entity using the LicenseService.
     All business logic and orchestration is handled in the service layer.
     """
     try:
-        # Require authentication for write operations
-        # Note: FastAPI dependencies not used to keep changes minimal
-        # Authorization header will be checked by the caller when using API.
-        # If called through HTTP, use Header in the function signature.
-        pass
+        _require_auth(authorization)
         
         # Map clean properties to legacy model format
         data = d.dict()
@@ -409,13 +399,14 @@ async def create_license(d: LicenseCreate):
         _err(f"Unexpected error: {str(e)}", 500)
 
 @app.put("/api/licenses/{license_id}")
-async def update_license(license_id: int, d: LicenseUpdate):
+async def update_license(license_id: int, d: LicenseUpdate, authorization: Optional[str] = Header(None)):
     """Partially update a license.
 
     Only provided fields are passed through, which prevents accidental overwrites of
     untouched columns. That behavior matters because the UI often submits edit forms
     with only a subset of fields.
     """
+    _require_auth(authorization)
     fields = {k: v for k, v in d.dict(exclude_unset=True).items() if v is not None}
     if not fields:
         _err("No updatable fields provided.")
@@ -423,24 +414,26 @@ async def update_license(license_id: int, d: LicenseUpdate):
     return _ok(message="License updated")
 
 @app.delete("/api/licenses/{license_id}")
-async def delete_license(license_id: int):
+async def delete_license(license_id: int, authorization: Optional[str] = Header(None)):
     """Soft-delete a license contract via service layer.
 
     This endpoint never hard-deletes because the system needs audit history and
     restore support. Removing the service indirection here would make that policy
     much easier to bypass.
     """
+    _require_auth(authorization)
     license_service.soft_delete_license(license_id)
     return _ok(message="License deleted (soft)")
 
 @app.post("/api/licenses/{license_id}/restore")
-async def restore_license(license_id: int):
+async def restore_license(license_id: int, authorization: Optional[str] = Header(None)):
     """Restore a soft-deleted contract via service layer with validation.
 
     The service performs the business-rule check before the mutation, so the API
     stays thin while still rejecting invalid restores cleanly.
     """
     try:
+        _require_auth(authorization)
         license_service.restore_license(license_id)
         return _ok(message="License restored")
     except ValueError as e:
@@ -456,7 +449,7 @@ async def list_companies():
 
 
 @app.post("/api/companies", status_code=201)
-async def create_company(request: Request, authorization: str | None = Header(None)):
+async def create_company(request: Request, authorization: Optional[str] = Header(None)):
     """Create a new company. Prevent duplicates by registration number or exact name."""
     _require_auth(authorization)
     d = await request.json()
@@ -505,12 +498,13 @@ async def get_settings():
     return _ok(db.get_all_settings())
 
 @app.put("/api/settings")
-async def save_settings(request: Request):
+async def save_settings(request: Request, authorization: Optional[str] = Header(None)):
     """Save application settings from key-value pairs.
 
     Settings are stored individually so the app can persist small configuration
     changes without requiring a dedicated settings table schema migration every time.
     """
+    _require_auth(authorization)
     d = await request.json()
     for key, value in d.items():
         db.set_setting(key, str(value))
