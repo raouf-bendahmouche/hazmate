@@ -40,7 +40,7 @@ The business rules layer enforces domain logic that cannot be expressed as field
 
 Examples:
 - Vehicle registration is mandatory for a contract.
-- A license number must exist before creation.
+- A registration number must exist before creation.
 - A deleted record can only be restored if dependent entities are still available.
 
 Why this layer exists:
@@ -52,7 +52,7 @@ Why this layer exists:
 SQLite constraints are the final safety net.
 
 Examples:
-- Unique license and record numbers.
+- Unique registration (record) and internal license numbers.
 - Foreign key relationships.
 - Non-null constraints on critical columns.
 

@@ -63,7 +63,9 @@ async function populateCommunesSelect(selectEl, selectedValue = '', isFilter = f
         ? `<option value="">${t('opt_all')}</option>`
         : `<option value="">${t('select_address')}</option>`;
 
-    data.communes.forEach(commune => {
+    const sortedCommunes = [...data.communes].sort((a, b) => a.localeCompare(b));
+
+    sortedCommunes.forEach(commune => {
         const opt = document.createElement('option');
         const val = isFilter ? commune : `${commune}, ${data.wilaya}`;
         opt.value = val;
@@ -299,7 +301,7 @@ async function renderDashboard() {
                         <table class="table">
                             <thead>
                                 <tr>
-                                    <th>${t('col_license')}</th>
+                                    <th>${t('col_record')}</th>
                                     <th>${t('company_name')}</th>
                                     <th>${t('col_expiry')}</th>
                                 </tr>
@@ -307,7 +309,7 @@ async function renderDashboard() {
                             <tbody>
                                 ${expiring.map(ex => `
                                     <tr>
-                                        <td>${ex.license_number}</td>
+                                        <td>${ex.record_number}</td>
                                         <td>${ex.company_name}</td>
                                         <td><span class="badge badge-amber">${ex.expiration_date}</span></td>
                                     </tr>
@@ -352,21 +354,21 @@ async function renderDashboard() {
 
         el.content.innerHTML = `
             <div class="stats-grid mb-24">
-                <div class="stat-card" style="border-top: 4px solid var(--accent)">
+                <div class="stat-card" id="card-active-contracts" style="border-top: 4px solid var(--accent); cursor: pointer;">
                     <div class="stat-icon purple">📄</div>
                     <div class="stat-info">
                         <div class="stat-value">${stats.active_licenses}</div>
                         <div class="stat-label">${t('stat_active')}</div>
                     </div>
                 </div>
-                <div class="stat-card" style="border-top: 4px solid var(--danger)">
+                <div class="stat-card" id="card-expired-contracts" style="border-top: 4px solid var(--danger); cursor: pointer;">
                     <div class="stat-icon red">⏰</div>
                     <div class="stat-info">
                         <div class="stat-value">${stats.expired_licenses}</div>
                         <div class="stat-label">${t('stat_expired')}</div>
                     </div>
                 </div>
-                <div class="stat-card" style="border-top: 4px solid var(--success)">
+                <div class="stat-card" id="card-total-contracts" style="border-top: 4px solid var(--success); cursor: pointer;">
                     <div class="stat-icon green">📋</div>
                     <div class="stat-info">
                         <div class="stat-value">${stats.total_contracts}</div>
@@ -381,6 +383,19 @@ async function renderDashboard() {
             <h2 class="mb-16 mt-24">📈 ${t('system_forecasting') || 'System Forecasting'}</h2>
             ${forecastHtml}
         `;
+
+        document.getElementById('card-active-contracts').onclick = () => {
+            searchParams.status = 'active';
+            navigateTo('search');
+        };
+        document.getElementById('card-expired-contracts').onclick = () => {
+            searchParams.status = 'expired';
+            navigateTo('search');
+        };
+        document.getElementById('card-total-contracts').onclick = () => {
+            searchParams.status = '';
+            navigateTo('search');
+        };
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -541,7 +556,7 @@ async function renderSearch() {
             <table id="results-table">
                 <thead>
                     <tr>
-                        <th>${t('col_record')} / ${t('license_number')}</th>
+                        <th>${t('col_record')}</th>
                         <th>${t('signing_date')}</th>
                         <th>${t('company_carrier_name')}</th>
                         <th>${t('registration_code')}</th>
@@ -586,7 +601,7 @@ async function renderSearch() {
         loadSearchResults();
     };
 
-    searchInput.oninput = debounce(triggerSearch, 400);
+    searchInput.oninput = debounce(triggerSearch, 250);
     filterStatus.onchange = triggerSearch;
     filterLocation.onchange = triggerSearch;
     filterCtype.onchange = triggerSearch;
@@ -614,10 +629,10 @@ async function loadSearchResults() {
                 <tr>
                     <td colspan="13">
                         <div class="empty-state">
-                            <div class="empty-icon">📂</div>
-                            <h3>${t('no_records') || 'No records found'}</h3>
-                            <p>${t('try_adjust_filter') || 'Try adjusting your filters or search terms'}</p>
-                            <button class="btn btn-primary mt-16" onclick="navigateTo('add-contract')">${t('btn_add_new') || 'Add New Contract'}</button>
+                            <div class="empty-icon">🔍</div>
+                            <h3>${t('no_results_found')}</h3>
+                            <p>${t('try_adjust_filter')}</p>
+                            <button class="btn btn-primary mt-16" onclick="navigateTo('add-contract')">${t('btn_add_new')}</button>
                         </div>
                     </td>
                 </tr>
@@ -628,7 +643,7 @@ async function loadSearchResults() {
 
         tbody.innerHTML = result.records.map(r => `
             <tr>
-                <td>${r.record_number} / ${r.license_number}</td>
+                <td>${r.record_number}</td>
                 <td>${r.signature_date || '-'}</td>
                 <td>${r.company_name}</td>
                 <td>${r.company_reg || '-'}</td>
@@ -746,7 +761,7 @@ async function renderDeletedContracts() {
             <table>
                 <thead>
                     <tr>
-                        <th>${t('col_record')} / ${t('license_number')}</th>
+                        <th>${t('col_record')}</th>
                         <th>${t('signing_date')}</th>
                         <th>${t('company_carrier_name')}</th>
                         <th>${t('registration_code')}</th>
@@ -791,7 +806,7 @@ async function renderDeletedContracts() {
         loadDeletedResults();
     };
 
-    searchInput.oninput = debounce(triggerSearch, 400);
+    searchInput.oninput = debounce(triggerSearch, 250);
     filterStatus.onchange = triggerSearch;
     filterLocation.onchange = triggerSearch;
     filterCtype.onchange = triggerSearch;
@@ -814,14 +829,24 @@ async function loadDeletedResults() {
     try {
         const result = await API.getDeletedLicenses(deletedSearchParams);
         if (result.records.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="13" class="empty-state">${t('no_deleted_records')}</td></tr>`;
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="13">
+                        <div class="empty-state">
+                            <div class="empty-icon">🔍</div>
+                            <h3>${t('no_results_found')}</h3>
+                            <p>${t('try_adjust_filter')}</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
             pagination.innerHTML = '';
             return;
         }
 
         tbody.innerHTML = result.records.map(r => `
             <tr>
-                <td>${r.record_number} / ${r.license_number}</td>
+                <td>${r.record_number}</td>
                 <td>${r.signature_date || '-'}</td>
                 <td>${r.company_name}</td>
                 <td>${r.company_reg || '-'}</td>
@@ -1388,6 +1413,33 @@ async function handleFormSubmit(event) {
     const formData = new FormData(form);
     const data = Object.fromEntries(formData.entries());
 
+    // Final duplicate check
+    try {
+        const checkRecord = await API.checkDuplicate({ record_number: data.record_number.trim() });
+        if (checkRecord.is_duplicate) {
+            const errEl = form.querySelector('[data-error-for="record_number"]');
+            if (errEl) errEl.textContent = t('err_duplicate_registration');
+            form.querySelector('[name="record_number"]').classList.add('input-invalid');
+            showToast(t('form_has_errors'), 'error');
+            submitBtn.disabled = false;
+            submitBtn.textContent = t('btn_save');
+            return;
+        }
+        
+        const checkVehicle = await API.checkDuplicate({ vehicle_reg: data.vehicle_reg.trim() });
+        if (checkVehicle.is_duplicate) {
+            const errEl = form.querySelector('[data-error-for="vehicle_reg"]');
+            if (errEl) errEl.textContent = t('err_duplicate_registration');
+            form.querySelector('[name="vehicle_reg"]').classList.add('input-invalid');
+            showToast(t('form_has_errors'), 'error');
+            submitBtn.disabled = false;
+            submitBtn.textContent = t('btn_save');
+            return;
+        }
+    } catch (err) {
+        console.error(err);
+    }
+
     // Map frontend clean fields to backend legacy model structure
     const payload = {
         record_number: data.record_number,
@@ -1450,6 +1502,37 @@ function setupContractFormValidation() {
     const submitBtn = document.getElementById('submit-btn');
     const trackedInputs = Array.from(form.querySelectorAll('[data-validate]'));
 
+    let duplicateErrors = {
+        record_number: '',
+        vehicle_reg: ''
+    };
+
+    async function checkFieldDuplicate(input) {
+        const val = input.value.trim();
+        if (!val) {
+            duplicateErrors[input.name] = '';
+            validateInput(input);
+            validateAll();
+            return;
+        }
+        if (input.name === 'record_number' || input.name === 'vehicle_reg') {
+            try {
+                const params = {};
+                params[input.name] = val;
+                const res = await API.checkDuplicate(params);
+                if (res.is_duplicate) {
+                    duplicateErrors[input.name] = t('err_duplicate_registration');
+                } else {
+                    duplicateErrors[input.name] = '';
+                }
+            } catch (err) {
+                console.error("Duplicate check failed", err);
+            }
+            validateInput(input);
+            validateAll();
+        }
+    }
+
     function setError(input, message) {
         const errorEl = form.querySelector(`[data-error-for="${input.name}"]`);
         if (!errorEl) return;
@@ -1493,6 +1576,11 @@ function setupContractFormValidation() {
             return false;
         }
 
+        if (duplicateErrors[input.name]) {
+            setError(input, duplicateErrors[input.name]);
+            return false;
+        }
+
         setError(input, '');
         return true;
     }
@@ -1509,7 +1597,19 @@ function setupContractFormValidation() {
         return formIsValid;
     }
 
+    const checkDuplicateDebounced = debounce(async (input) => {
+        await checkFieldDuplicate(input);
+    }, 500);
+
     trackedInputs.forEach(input => {
+        if (input.name === 'record_number' || input.name === 'vehicle_reg') {
+            input.addEventListener('input', () => {
+                checkDuplicateDebounced(input);
+            });
+            input.addEventListener('blur', () => {
+                checkFieldDuplicate(input);
+            });
+        }
         input.addEventListener('input', () => {
             input.classList.add('touched');
             validateInput(input);
@@ -1588,10 +1688,7 @@ async function openEditModal(id) {
                     <div class="form-group">
                         <label>${t('record_number')}</label>
                         <input type="text" class="form-control" name="record_number" value="${data.record_number}">
-                    </div>
-                    <div class="form-group">
-                        <label>${t('license_number')}</label>
-                        <input type="text" class="form-control" name="license_number" value="${data.license_number}">
+                        <div class="field-error" data-error-for="record_number"></div>
                     </div>
                 </div>
                 <div class="form-row">
@@ -1627,7 +1724,47 @@ async function openEditModal(id) {
 
         modal.classList.remove('hidden');
 
+        const recordInput = body.querySelector('[name="record_number"]');
+        const errEl = body.querySelector('[data-error-for="record_number"]');
+
+        const checkEditDuplicate = async () => {
+            const val = recordInput.value.trim();
+            if (!val) {
+                errEl.textContent = t('invalid_required');
+                recordInput.classList.add('input-invalid');
+                return false;
+            }
+            if (!/^\d+$/.test(val)) {
+                errEl.textContent = t('invalid_numbers_only');
+                recordInput.classList.add('input-invalid');
+                return false;
+            }
+            try {
+                const res = await API.checkDuplicate({ record_number: val, exclude_id: id });
+                if (res.is_duplicate) {
+                    errEl.textContent = t('err_duplicate_registration');
+                    recordInput.classList.add('input-invalid');
+                    return false;
+                } else {
+                    errEl.textContent = '';
+                    recordInput.classList.remove('input-invalid');
+                    return true;
+                }
+            } catch (err) {
+                console.error(err);
+                return true;
+            }
+        };
+
+        recordInput.addEventListener('input', debounce(checkEditDuplicate, 500));
+        recordInput.addEventListener('blur', checkEditDuplicate);
+
         document.getElementById('edit-save').onclick = async () => {
+            const isValid = await checkEditDuplicate();
+            if (!isValid) {
+                showToast(t('form_has_errors'), 'error');
+                return;
+            }
             const formData = new FormData(document.getElementById('edit-form'));
             const updateData = Object.fromEntries(formData.entries());
             try {

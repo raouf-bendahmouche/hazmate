@@ -368,6 +368,35 @@ def map_clean_to_legacy_dict(data: dict) -> dict:
             
     return data
 
+@app.get("/api/licenses/check-duplicate")
+async def check_duplicate(
+    record_number: Optional[str] = None,
+    vehicle_reg: Optional[str] = None,
+    exclude_id: Optional[int] = None
+):
+    """
+    Check if a record_number or vehicle_reg already exists in the system.
+    If exclude_id is provided, exclude that license ID from the check.
+    """
+    is_duplicate = False
+    message = ""
+    
+    if record_number:
+        record_number = record_number.strip()
+        existing = db.get_license_by_record_number(record_number)
+        if existing and (exclude_id is None or existing["id"] != exclude_id):
+            is_duplicate = True
+            message = "This registration number is already reserved"
+            
+    if not is_duplicate and vehicle_reg:
+        vehicle_reg = vehicle_reg.strip()
+        existing = db.get_license_by_vehicle_reg(vehicle_reg)
+        if existing and (exclude_id is None or existing["id"] != exclude_id):
+            is_duplicate = True
+            message = "This registration number is already reserved"
+            
+    return {"is_duplicate": is_duplicate, "message": message}
+
 @app.post("/api/licenses", status_code=201)
 async def create_license(d: LicenseCreate, authorization: Optional[str] = Header(None)):
     """
@@ -386,10 +415,13 @@ async def create_license(d: LicenseCreate, authorization: Optional[str] = Header
         # we already know are invalid.
         lic_num = data.get("license_number")
         rec_num = data.get("record_number")
+        vehicle_reg = data.get("vehicle_reg")
         if db.get_license_by_number(lic_num):
             _err(f"License number '{lic_num}' already exists.")
         if db.get_license_by_record_number(rec_num):
-            _err(f"Record number '{rec_num}' already exists.")
+            _err("This registration number is already reserved")
+        if vehicle_reg and db.get_license_by_vehicle_reg(vehicle_reg):
+            _err("This registration number is already reserved")
 
         lic_id = license_service.create_complete_license(data)
         return _ok({"id": lic_id}, "License created successfully")
@@ -410,8 +442,18 @@ async def update_license(license_id: int, d: LicenseUpdate, authorization: Optio
     fields = {k: v for k, v in d.dict(exclude_unset=True).items() if v is not None}
     if not fields:
         _err("No updatable fields provided.")
+    
+    # Auto-synchronize internal license_number if record_number (Registration Number) is updated
+    if "record_number" in fields:
+        fields["license_number"] = f"LIC-{fields['record_number']}"
+        rec_num = fields["record_number"]
+        existing = db.get_license_by_record_number(rec_num)
+        if existing and existing["id"] != license_id:
+            _err("This registration number is already reserved")
+        
     db.update_license(license_id, **fields)
     return _ok(message="License updated")
+
 
 @app.delete("/api/licenses/{license_id}")
 async def delete_license(license_id: int, authorization: Optional[str] = Header(None)):

@@ -74,6 +74,9 @@ const API = {
   )),
   restoreLicense: (id)      => apiFetch(`/api/licenses/${id}/restore`, { method:"POST" }),
   expiringLicenses: (d=30) => apiFetch(`/api/licenses/expiring?days=${d}`),
+  checkDuplicate: (params={}) => apiFetch("/api/licenses/check-duplicate?" + new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([,v]) => v !== null && v !== undefined && v !== ""))
+  )),
 
   // Companies / Vehicles
   getCompanies: ()         => apiFetch("/api/companies"),

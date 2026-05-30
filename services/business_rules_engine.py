@@ -13,15 +13,14 @@ class BusinessRules:
     def validate_license_creation(self, data: Dict[str, Any]):
         """
         Enforce business rules for creating a new license.
-        Rule 1: Cannot add driver without a license number (already in Pydantic)
-        Rule 2: Cannot create contract without vehicle registration.
-        Rule 3: Record number must be unique (checked in DB, but can be here too).
+        Rule 1: Cannot create contract without vehicle registration.
+        Rule 2: Record number is mandatory.
         """
         if not data.get("vehicle_reg"):
             raise ValueError("Business Rule Violation: Vehicle registration is mandatory for any contract.")
         
         if not data.get("license_number"):
-            raise ValueError("Business Rule Violation: License number is mandatory.")
+            raise ValueError("Business Rule Violation: Registration number is mandatory.")
 
     def can_restore_license(self, license_id: int) -> bool:
         """Rule: A license can only be restored if the associated vehicle and company are not permanently deleted."""

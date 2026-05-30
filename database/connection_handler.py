@@ -379,9 +379,9 @@ class Database:
 
         if search_term:
             base += """ AND (l.record_number LIKE ? OR l.license_number LIKE ?
-                         OR v.registration_number LIKE ? OR c.name LIKE ? OR l.driver_name LIKE ?)"""
+                         OR v.registration_number LIKE ? OR c.name LIKE ? OR c.registration_number LIKE ? OR l.driver_name LIKE ?)"""
             p = f"%{search_term}%"
-            params.extend([p, p, p, p, p])
+            params.extend([p, p, p, p, p, p])
 
         if status_filter:
             base += " AND l.status=?"
@@ -444,9 +444,9 @@ class Database:
 
         if search_term:
             base += """ AND (CAST(l.id AS TEXT) LIKE ? OR l.record_number LIKE ? OR l.license_number LIKE ?
-                         OR v.registration_number LIKE ? OR c.name LIKE ? OR l.driver_name LIKE ?)"""
+                         OR v.registration_number LIKE ? OR c.name LIKE ? OR c.registration_number LIKE ? OR l.driver_name LIKE ?)"""
             p = f"%{search_term}%"
-            params.extend([p, p, p, p, p, p])
+            params.extend([p, p, p, p, p, p, p])
 
         if status_filter:
             base += " AND l.status=?"
@@ -514,6 +514,19 @@ class Database:
         conn.close()
         return dict(row) if row else None
 
+    def get_license_by_vehicle_reg(self, vehicle_reg):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT l.id FROM licenses l
+            JOIN vehicles v ON l.vehicle_id = v.id
+            WHERE v.registration_number=? AND l.is_deleted=0 AND v.is_deleted=0
+        """, (vehicle_reg,))
+        row = cursor.fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+
     def update_license(self, license_id, **fields):
         if not fields:
             return None
@@ -570,7 +583,7 @@ class Database:
         today = datetime.now().date()
         expiry_date = (datetime.now() + timedelta(days=days_ahead)).date()
         cursor.execute(
-            """SELECT l.id, l.license_number, l.driver_name, l.expiration_date,
+            """SELECT l.id, l.record_number, l.expiration_date,
                       v.registration_number AS vehicle_reg, c.name AS company_name
                FROM licenses l
                JOIN vehicles v ON l.vehicle_id=v.id
