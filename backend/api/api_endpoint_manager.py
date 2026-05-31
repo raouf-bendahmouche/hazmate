@@ -335,39 +335,6 @@ async def expiring(days: int = 30):
     return _ok(db.get_expiring_licenses(days))
 
 
-@app.get("/api/licenses/{license_id}")
-async def get_license(license_id: int):
-    """Get full details of a specific license/contract."""
-    row = db.get_license_by_id(license_id)
-    if not row:
-        _err("License not found", 404)
-    return _ok(row)
-
-def map_clean_to_legacy_dict(data: dict) -> dict:
-    # Auto-generate license_number if missing
-    if not data.get("license_number") and data.get("record_number"):
-        data["license_number"] = f"LIC-{data['record_number']}"
-        
-    # Split vehicle_type_category if present
-    if data.get("vehicle_type_category"):
-        type_cat = data.pop("vehicle_type_category").strip()
-        parts = type_cat.split(None, 1)
-        data["vehicle_type"] = parts[0]
-        data["vehicle_category"] = parts[1] if len(parts) > 1 else ""
-    elif "vehicle_type_category" in data:
-        data.pop("vehicle_type_category")
-            
-    # Split route if present
-    if data.get("route"):
-        route = data.pop("route").strip()
-        parts = re.split(r"→|->", route)
-        data["route_origin"] = parts[0].strip()
-        data["route_dest"] = parts[1].strip() if len(parts) > 1 else ""
-    elif "route" in data:
-        data.pop("route")
-            
-    return data
-
 @app.get("/api/licenses/check-duplicate")
 async def check_duplicate(
     record_number: Optional[str] = None,
@@ -395,7 +362,45 @@ async def check_duplicate(
             is_duplicate = True
             message = "This registration number is already reserved"
             
-    return {"is_duplicate": is_duplicate, "message": message}
+    return _ok({"is_duplicate": is_duplicate, "message": message})
+
+
+@app.get("/api/licenses/{license_id}")
+async def get_license(license_id: int):
+    """Get full details of a specific license/contract."""
+    row = db.get_license_by_id(license_id)
+    if not row:
+        _err("License not found", 404)
+    return _ok(row)
+
+def map_clean_to_legacy_dict(data: dict) -> dict:
+    # Auto-generate license_number if missing
+    if not data.get("license_number") and data.get("record_number"):
+        data["license_number"] = f"LIC-{data['record_number']}"
+        
+    # Split vehicle_type_category if present
+    if data.get("vehicle_type_category"):
+        type_cat = data.pop("vehicle_type_category").strip()
+        parts = type_cat.split(None, 1)
+        data["vehicle_type"] = parts[0]
+        data["vehicle_category"] = parts[1] if len(parts) > 1 else ""
+    elif "vehicle_type_category" in data:
+        data.pop("vehicle_type_category")
+            
+    # Split route if present
+    if data.get("route"):
+        route = data.pop("route").strip()
+        if re.search(r"→|->|-", route):
+            parts = re.split(r"→|->|-", route)
+            data["route_origin"] = parts[0].strip()
+            data["route_dest"] = " - ".join(p.strip() for p in parts[1:]) if len(parts) > 1 else ""
+        else:
+            data["route_origin"] = ""
+            data["route_dest"] = route
+    elif "route" in data:
+        data.pop("route")
+            
+    return data
 
 @app.post("/api/licenses", status_code=201)
 async def create_license(d: LicenseCreate, authorization: Optional[str] = Header(None)):
@@ -451,6 +456,11 @@ async def update_license(license_id: int, d: LicenseUpdate, authorization: Optio
         if existing and existing["id"] != license_id:
             _err("This registration number is already reserved")
         
+    try:
+        license_service.rules.validate_license_update(license_id, fields)
+    except ValueError as e:
+        _err(str(e))
+
     db.update_license(license_id, **fields)
     return _ok(message="License updated")
 

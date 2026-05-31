@@ -11,10 +11,12 @@ This document explains how the system prevents invalid data, reports failures, a
 The renderer performs immediate checks to improve user experience, utilizing a stateful Touched/Dirty UX pattern to avoid preemptive error indicators.
 
 Examples & Mechanics:
-- Required fields must be filled before submission.
+- **Required Fields Enforcement:** Saving a contract requires all 9 target fields: Record Number, Signing/Start Date, Carrier Name, Commune Address, Vehicle Registration, Vehicle Type/Category, Route Destination, Expiry Date, and Transported Materials. Missing fields are highlighted in red and trigger localized error indicators.
+- **Format Constraints:** The Registration/Record Number and Vehicle Registration must follow a numeric-only format (rejecting letters). The Carrier Name must follow a letters-only format (rejecting numbers). The Route Destination must follow a text-only format (rejecting numeric-only entries).
+- **Date Chronology Constraint:** The License Expiration Date must always be strictly after the Signature/Start Date. If violated, saving is disabled and a localized warning is displayed near the Expiration Date input.
+- **UX Non-Destructiveness:** If validation fails on save, the form **is never cleared/reset**. All entered text and selections are preserved, allowing the user to correct specific errors without losing their progress.
 - Inputs are not visually decorated with invalid indicators (`.input-invalid`) or validation texts until they are marked as `.touched` (on focus blur or edit input) or the form is marked as `.submitted` (during a submit action).
 - The submit button starts disabled on page load and evaluates form-wide validity upon input changes, ensuring no invalid payload is transmitted.
-- Basic formatting rules (like checking for digits-only or letters-only) reduce avoidable backend validation errors.
 - Dangerous actions require confirmation.
 
 Why this layer exists:
@@ -36,16 +38,18 @@ Why this layer exists:
 
 ### 2.3 Business Validation
 
-The business rules layer enforces domain logic that cannot be expressed as field typing alone.
+The business rules layer enforces domain logic that cannot be expressed as field typing alone. Redundant validation is performed on the backend to reject invalid payloads even if the frontend validation is bypassed.
 
 Examples:
-- Vehicle registration is mandatory for a contract.
-- A registration number must exist before creation.
+- All 9 fields (Record Number, Signature Date, Carrier Name, Company Address, Vehicle Registration, Vehicle Type, Route Destination, Expiration Date, Transported Material) are mandatory.
+- Expiration date must be later than signature date.
+- Format validations (registration/vehicle number numeric check, company registration numeric check, route destination non-numeric check, and carrier name non-numeric check) are strictly enforced.
 - A deleted record can only be restored if dependent entities are still available.
 
 Why this layer exists:
 - It captures policy, not just syntax.
 - It keeps rule changes in one place.
+- It acts as the final boundary before data persistence, ensuring absolute data integrity.
 
 ### 2.4 Database Validation
 

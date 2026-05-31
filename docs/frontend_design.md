@@ -84,7 +84,7 @@ The 11 Clean Contract Fields:
 5. **Company Address** (maps to `company_address`): Required. Setif commune selection dropdown.
 6. **Vehicle Registration Number** (maps to `vehicle_reg`): Required.
 7. **Vehicle Type and Category** (maps to `vehicle_type_category`): Required. Splitted to `vehicle_type` and `vehicle_category` on submit.
-8. **Route (Origin → Destination)** (maps to `route`): Required. Splitted to `route_origin` and `route_dest` on submit.
+8. **Route Destination** (maps to `route`): Required. Mapped directly to `route_dest` (leaving `route_origin` empty) on submit. Can contain legacy delimiters (→, ->, -) for backward compatibility.
 9. **License Expiry Date** (maps to `expiration_date`): Required.
 10. **Carrier Type** (maps to `carrier_type`): Public or Private selection.
 11. **Transported Materials** (maps to `hazmat_type`): Required.
@@ -148,7 +148,7 @@ Why this matters:
 - **Add Contract Form Refactoring:** The multi-section form has been simplified into a single "Add Contract" section. Unexposed backend fields (e.g. driver details like name/phone, checkpoints) are omitted from the UI layer to streamline the transport registration flow.
 - **KPI Card and Statistics Simplification:** Removed all driver details (name/phone), total vehicles, and total drivers counters from the UI and statistics. The dashboard now features a 3-tier KPI structure: Active Contracts, Expired Contracts, and Total Contracts.
 - **Touched state Validation UX:** Modified validation trigger logic to prevent pre-emptive red validation error borders from rendering before a user interacts with the form.
-- **Payload Mapping Adapter:** Form submissions are run through a mapping adapter inside `handleFormSubmit()` in `main_dashboard_controller.js` to ensure backward-compatibility. The adapter auto-generates internal `license_number` as `'LIC-' + record_number`, splits `vehicle_type_category` into `vehicle_type` and `vehicle_category`, and splits the `route` string into `route_origin` and `route_dest` before sending the POST request.
+- **Payload Mapping Adapter:** Form submissions are run through a mapping adapter inside `handleFormSubmit()` in `main_dashboard_controller.js` to ensure backward-compatibility. The adapter auto-generates internal `license_number` as `'LIC-' + record_number`, splits `vehicle_type_category` into `vehicle_type` and `vehicle_category`, and maps the simplified single `route` input directly to `route_dest` (while maintaining backward compatibility by splitting on delimiters if present) before sending the POST request.
 
 ## Recent UI Changes (Early May 2026)
 

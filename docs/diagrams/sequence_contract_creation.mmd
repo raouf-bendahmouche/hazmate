@@ -8,9 +8,13 @@ sequenceDiagram
     participant DB as Database
     participant SQLite as licenses.db
 
-    User->>UI: fill form and submit contract-form
-    Note over UI: UI validates inputs (touched checks)<br/>and maps clean fields to legacy payload
-    UI->>Client: API.createLicense(payload)
+    User->>UI: fill form and click Save
+    alt invalid inputs (missing required fields, format errors, or chronology check fails)
+        Note over UI: UI highlights invalid inputs,<br/>displays localized warnings, and<br/>preserves all entered form data
+        UI-->>User: error styling & warning feedback
+    else valid inputs
+        Note over UI: UI maps clean fields to legacy payload
+        UI->>Client: API.createLicense(payload)
     Client->>API: POST /api/licenses
     Note over API: API maps clean fields to legacy dict<br/>(if backend fallback is triggered)
     API->>DB: get_license_by_number() / get_license_by_record_number()

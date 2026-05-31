@@ -650,7 +650,7 @@ async function loadSearchResults() {
                 <td>${r.company_address || '-'}</td>
                 <td>${r.vehicle_reg}</td>
                 <td>${r.vehicle_type || ''} ${r.vehicle_category || ''}</td>
-                <td>${r.route_origin || ''} ${r.route_dest ? '→ ' + r.route_dest : ''}</td>
+                <td>${r.route_dest || ''}</td>
                 <td>${r.expiration_date}</td>
                 <td>${t('opt_' + r.carrier_type.toLowerCase()) || r.carrier_type}</td>
                 <td>${r.hazmat_type || '-'}</td>
@@ -853,7 +853,7 @@ async function loadDeletedResults() {
                 <td>${r.company_address || '-'}</td>
                 <td>${r.vehicle_reg}</td>
                 <td>${r.vehicle_type || ''} ${r.vehicle_category || ''}</td>
-                <td>${r.route_origin || ''} ${r.route_dest ? '→ ' + r.route_dest : ''}</td>
+                <td>${r.route_dest || ''}</td>
                 <td>${r.expiration_date}</td>
                 <td>${t('opt_' + r.carrier_type.toLowerCase()) || r.carrier_type}</td>
                 <td>${r.hazmat_type || '-'}</td>
@@ -1308,8 +1308,9 @@ async function renderAddContract() {
                                 <div class="field-error" data-error-for="record_number"></div>
                             </div>
                             <div class="form-group">
-                                <label>${t('signing_date')}</label>
-                                <input type="date" class="form-control" name="signature_date">
+                                <label>${t('signing_date')} *</label>
+                                <input type="date" class="form-control" name="signature_date" data-validate="required">
+                                <div class="field-error" data-error-for="signature_date"></div>
                             </div>
                         </div>
 
@@ -1327,11 +1328,12 @@ async function renderAddContract() {
                         </div>
 
                         <div class="form-group">
-                            <label>${t('company_address')}</label>
-                            <select class="form-control" name="company_address">
+                            <label>${t('company_address')} *</label>
+                            <select class="form-control" name="company_address" data-validate="required">
                                 <!-- Options: populated later by user -->
                                 <option value="">${t('select_address')}</option>
                             </select>
+                            <div class="field-error" data-error-for="company_address"></div>
                         </div>
 
                         <div class="form-row">
@@ -1341,19 +1343,22 @@ async function renderAddContract() {
                                 <div class="field-error" data-error-for="vehicle_reg"></div>
                             </div>
                             <div class="form-group">
-                                <label>${t('vehicle_type_category')}</label>
-                                <input type="text" class="form-control" name="vehicle_type_category" placeholder="e.g. Truck A">
+                                <label>${t('vehicle_type_category')} *</label>
+                                <input type="text" class="form-control" name="vehicle_type_category" data-validate="required" placeholder="e.g. Truck A">
+                                <div class="field-error" data-error-for="vehicle_type_category"></div>
                             </div>
                         </div>
 
                         <div class="form-row">
                             <div class="form-group">
-                                <label>${t('route')}</label>
-                                <input type="text" class="form-control" name="route" placeholder="e.g. Setif → Algiers">
+                                <label>${t('route')} *</label>
+                                <input type="text" class="form-control" name="route" data-validate="required" placeholder="e.g. Setif">
+                                <div class="field-error" data-error-for="route"></div>
                             </div>
                             <div class="form-group">
-                                <label>${t('license_expiry_date')}</label>
-                                <input type="date" class="form-control" name="expiration_date">
+                                <label>${t('license_expiry_date')} *</label>
+                                <input type="date" class="form-control" name="expiration_date" data-validate="required">
+                                <div class="field-error" data-error-for="expiration_date"></div>
                             </div>
                         </div>
 
@@ -1366,8 +1371,9 @@ async function renderAddContract() {
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>${t('transported_materials')}</label>
-                                <input type="text" class="form-control" name="hazmat_type">
+                                <label>${t('transported_materials')} *</label>
+                                <input type="text" class="form-control" name="hazmat_type" data-validate="required">
+                                <div class="field-error" data-error-for="hazmat_type"></div>
                             </div>
                         </div>
 
@@ -1475,16 +1481,9 @@ async function handleFormSubmit(event) {
         payload.vehicle_category = "";
     }
 
-    // Split route by → or -> separator
-    const route = (data.route || "").trim();
-    if (route) {
-        const parts = route.split(/→|->/);
-        payload.route_origin = (parts[0] || "").trim();
-        payload.route_dest = (parts[1] || "").trim();
-    } else {
-        payload.route_origin = "";
-        payload.route_dest = "";
-    }
+    // Map single route input directly to destination, leaving origin empty
+    payload.route_origin = "";
+    payload.route_dest = data.route ? data.route.trim() : "";
 
     try {
         await API.createLicense(payload);
@@ -1585,6 +1584,35 @@ function setupContractFormValidation() {
         return true;
     }
 
+    function checkDateChronology() {
+        const sigInput = form.querySelector('[name="signature_date"]');
+        const expInput = form.querySelector('[name="expiration_date"]');
+        if (!sigInput || !expInput) return true;
+
+        const sigVal = sigInput.value;
+        const expVal = expInput.value;
+        const errEl = form.querySelector('[data-error-for="expiration_date"]');
+        if (!errEl) return true;
+
+        const isTouchedOrSubmitted = expInput.classList.contains('touched') || sigInput.classList.contains('touched') || form.classList.contains('submitted');
+
+        if (sigVal && expVal) {
+            if (expVal <= sigVal) {
+                if (isTouchedOrSubmitted) {
+                    errEl.textContent = t('err_date_chronology');
+                    expInput.classList.add('input-invalid');
+                }
+                return false;
+            } else {
+                if (errEl.textContent === t('err_date_chronology')) {
+                    errEl.textContent = '';
+                    expInput.classList.remove('input-invalid');
+                }
+            }
+        }
+        return true;
+    }
+
     function validateAll() {
         let formIsValid = true;
         trackedInputs.forEach(input => {
@@ -1593,6 +1621,12 @@ function setupContractFormValidation() {
                 formIsValid = false;
             }
         });
+        
+        const isChronologyValid = checkDateChronology();
+        if (!isChronologyValid) {
+            formIsValid = false;
+        }
+
         submitBtn.disabled = !formIsValid;
         return formIsValid;
     }
@@ -1615,12 +1649,31 @@ function setupContractFormValidation() {
             validateInput(input);
             validateAll();
         });
+        input.addEventListener('change', () => {
+            input.classList.add('touched');
+            validateInput(input);
+            validateAll();
+        });
         input.addEventListener('blur', () => {
             input.classList.add('touched');
             validateInput(input);
             validateAll();
         });
     });
+
+    const sigInput = form.querySelector('[name="signature_date"]');
+    const expInput = form.querySelector('[name="expiration_date"]');
+    if (sigInput && expInput) {
+        const dateHandler = () => {
+            sigInput.classList.add('touched');
+            expInput.classList.add('touched');
+            validateAll();
+        };
+        sigInput.addEventListener('change', dateHandler);
+        expInput.addEventListener('change', dateHandler);
+        sigInput.addEventListener('input', dateHandler);
+        expInput.addEventListener('input', dateHandler);
+    }
 
     validateAll();
 }
@@ -1661,6 +1714,21 @@ function validateContractForm() {
             input.classList.toggle('input-invalid', Boolean(message));
         }
     });
+
+    const sigInput = form.querySelector('[name="signature_date"]');
+    const expInput = form.querySelector('[name="expiration_date"]');
+    if (sigInput && expInput) {
+        const sigVal = sigInput.value;
+        const expVal = expInput.value;
+        const errEl = form.querySelector('[data-error-for="expiration_date"]');
+        if (sigVal && expVal && expVal <= sigVal) {
+            if (errEl) {
+                errEl.textContent = t('err_date_chronology');
+            }
+            expInput.classList.add('input-invalid');
+            allValid = false;
+        }
+    }
     
     const submitBtn = document.getElementById('submit-btn');
     if (submitBtn) {
@@ -1686,27 +1754,30 @@ async function openEditModal(id) {
             <form id="edit-form">
                 <div class="form-row">
                     <div class="form-group">
-                        <label>${t('record_number')}</label>
+                        <label>${t('record_number')} *</label>
                         <input type="text" class="form-control" name="record_number" value="${data.record_number}">
                         <div class="field-error" data-error-for="record_number"></div>
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>${t('signature_date')}</label>
+                        <label>${t('signature_date')} *</label>
                         <input type="date" class="form-control" name="signature_date" value="${data.signature_date}">
+                        <div class="field-error" data-error-for="signature_date"></div>
                     </div>
                     <div class="form-group">
-                        <label>${t('expiration_date')}</label>
+                        <label>${t('expiration_date')} *</label>
                         <input type="date" class="form-control" name="expiration_date" value="${data.expiration_date}">
+                        <div class="field-error" data-error-for="expiration_date"></div>
                     </div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>${t('activity_location')}</label>
+                        <label>${t('activity_location')} *</label>
                         <select class="form-control" name="activity_location">
                             <!-- Populated dynamically -->
                         </select>
+                        <div class="field-error" data-error-for="activity_location"></div>
                     </div>
                     <div class="form-group">
                         <label>${t('carrier_type')}</label>
@@ -1725,42 +1796,102 @@ async function openEditModal(id) {
         modal.classList.remove('hidden');
 
         const recordInput = body.querySelector('[name="record_number"]');
-        const errEl = body.querySelector('[data-error-for="record_number"]');
+        const sigInput = body.querySelector('[name="signature_date"]');
+        const expInput = body.querySelector('[name="expiration_date"]');
+        const locSelect = body.querySelector('[name="activity_location"]');
 
-        const checkEditDuplicate = async () => {
-            const val = recordInput.value.trim();
-            if (!val) {
-                errEl.textContent = t('invalid_required');
+        const recErr = body.querySelector('[data-error-for="record_number"]');
+        const sigErr = body.querySelector('[data-error-for="signature_date"]');
+        const expErr = body.querySelector('[data-error-for="expiration_date"]');
+        const locErr = body.querySelector('[data-error-for="activity_location"]');
+
+        const validateEditForm = async () => {
+            let isValid = true;
+            
+            // 1. Validate record_number
+            const recVal = recordInput.value.trim();
+            if (!recVal) {
+                recErr.textContent = t('invalid_required');
                 recordInput.classList.add('input-invalid');
-                return false;
-            }
-            if (!/^\d+$/.test(val)) {
-                errEl.textContent = t('invalid_numbers_only');
+                isValid = false;
+            } else if (!/^\d+$/.test(recVal)) {
+                recErr.textContent = t('invalid_numbers_only');
                 recordInput.classList.add('input-invalid');
-                return false;
-            }
-            try {
-                const res = await API.checkDuplicate({ record_number: val, exclude_id: id });
-                if (res.is_duplicate) {
-                    errEl.textContent = t('err_duplicate_registration');
-                    recordInput.classList.add('input-invalid');
-                    return false;
-                } else {
-                    errEl.textContent = '';
-                    recordInput.classList.remove('input-invalid');
-                    return true;
+                isValid = false;
+            } else {
+                // Duplicate check
+                try {
+                    const res = await API.checkDuplicate({ record_number: recVal, exclude_id: id });
+                    if (res.is_duplicate) {
+                        recErr.textContent = t('err_duplicate_registration');
+                        recordInput.classList.add('input-invalid');
+                        isValid = false;
+                    } else {
+                        recErr.textContent = '';
+                        recordInput.classList.remove('input-invalid');
+                    }
+                } catch (err) {
+                    console.error(err);
                 }
-            } catch (err) {
-                console.error(err);
-                return true;
             }
+
+            // 2. Validate signature_date
+            if (!sigInput.value) {
+                sigErr.textContent = t('invalid_required');
+                sigInput.classList.add('input-invalid');
+                isValid = false;
+            } else {
+                sigErr.textContent = '';
+                sigInput.classList.remove('input-invalid');
+            }
+
+            // 3. Validate expiration_date
+            if (!expInput.value) {
+                expErr.textContent = t('invalid_required');
+                expInput.classList.add('input-invalid');
+                isValid = false;
+            } else {
+                expErr.textContent = '';
+                expInput.classList.remove('input-invalid');
+            }
+
+            // 4. Validate activity_location
+            if (!locSelect.value) {
+                locErr.textContent = t('invalid_required');
+                locSelect.classList.add('input-invalid');
+                isValid = false;
+            } else {
+                locErr.textContent = '';
+                locSelect.classList.remove('input-invalid');
+            }
+
+            // 5. Validate date chronology
+            if (sigInput.value && expInput.value) {
+                if (expInput.value <= sigInput.value) {
+                    expErr.textContent = t('err_date_chronology');
+                    expInput.classList.add('input-invalid');
+                    isValid = false;
+                }
+            }
+
+            document.getElementById('edit-save').disabled = !isValid;
+            return isValid;
         };
 
-        recordInput.addEventListener('input', debounce(checkEditDuplicate, 500));
-        recordInput.addEventListener('blur', checkEditDuplicate);
+        // Attach listeners to trigger validation in real-time
+        recordInput.addEventListener('input', debounce(validateEditForm, 500));
+        recordInput.addEventListener('blur', validateEditForm);
+        sigInput.addEventListener('change', validateEditForm);
+        expInput.addEventListener('change', validateEditForm);
+        sigInput.addEventListener('input', validateEditForm);
+        expInput.addEventListener('input', validateEditForm);
+        locSelect.addEventListener('change', validateEditForm);
+
+        // Run initial validation to reflect current values
+        await validateEditForm();
 
         document.getElementById('edit-save').onclick = async () => {
-            const isValid = await checkEditDuplicate();
+            const isValid = await validateEditForm();
             if (!isValid) {
                 showToast(t('form_has_errors'), 'error');
                 return;
