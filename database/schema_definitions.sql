@@ -3,7 +3,6 @@
 CREATE TABLE IF NOT EXISTS companies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    registration_number TEXT UNIQUE,
     address TEXT,
     carrier_type TEXT,
     account_type TEXT,
@@ -46,8 +45,10 @@ CREATE TABLE IF NOT EXISTS licenses (
     expiration_date DATE,
     status TEXT DEFAULT 'active',
     activity_location TEXT,
-    contract_type TEXT,
+    registration_number TEXT UNIQUE NOT NULL,
     deletion_days INTEGER,
+    vehicles_list TEXT,
+    drivers_list TEXT,
     is_deleted INTEGER DEFAULT 0,
     deleted_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -92,20 +93,25 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS notifications_log (
+CREATE TABLE IF NOT EXISTS drivers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    license_id INTEGER NOT NULL,
-    email_sent_to TEXT,
-    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (license_id) REFERENCES licenses(id)
+    company_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT,
+    is_deleted INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (company_id) REFERENCES companies(id)
 );
+
 
 -- Indexes for performance (Section 4.2 & 6)
 CREATE INDEX IF NOT EXISTS idx_licenses_number ON licenses(license_number);
 CREATE INDEX IF NOT EXISTS idx_licenses_expiration ON licenses(expiration_date);
 CREATE INDEX IF NOT EXISTS idx_licenses_status ON licenses(status);
 CREATE INDEX IF NOT EXISTS idx_licenses_municipality ON licenses(activity_location);
-CREATE INDEX IF NOT EXISTS idx_vehicles_registration ON vehicles(registration_number);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicles_registration ON vehicles(registration_number);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_registration_number ON licenses(registration_number);
+CREATE INDEX IF NOT EXISTS idx_licenses_driver ON licenses(driver_name);
 CREATE INDEX IF NOT EXISTS idx_vehicles_company ON vehicles(company_id);
 CREATE INDEX IF NOT EXISTS idx_companies_name ON companies(name);
 CREATE INDEX IF NOT EXISTS idx_hazmat_vehicle ON hazardous_materials(vehicle_id);

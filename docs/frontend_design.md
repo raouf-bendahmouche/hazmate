@@ -69,27 +69,15 @@ Benefits:
 
 ## 7. Form and Input Design
 
-Forms should enforce data integrity before the request reaches Python. 
+Forms should enforce data integrity before the request reaches Python.
 
-Validation UX Pattern (Touched/Dirty State):
-- To prevent intimidating users with immediate red error boundaries and messages on page load, form validation leverages a touched/dirty state check.
-- Inputs do not render `.input-invalid` borders or display text error messages until they are marked as `.touched` (triggered by `blur` or `input` events), or the form itself is marked as `.submitted` during a submission attempt.
-- The submit button is immediately disabled on load if mandatory requirements are unmet, ensuring data integrity is never compromised.
+Examples:
 
-The 11 Clean Contract Fields:
-1. **Serial Number / Record ID** (maps to `record_number`): Required.
-2. **Signing Date** (maps to `signature_date`): Required.
-3. **Carrier/Company Full Name** (maps to `company_name`): Required.
-4. **Registry Number** (maps to `company_reg`): Optional.
-5. **Company Address** (maps to `company_address`): Required. Setif commune selection dropdown.
-6. **Vehicle Registration Number** (maps to `vehicle_reg`): Required.
-7. **Vehicle Type and Category** (maps to `vehicle_type_category`): Required. Splitted to `vehicle_type` and `vehicle_category` on submit.
-8. **Route Destination** (maps to `route`): Required. Mapped directly to `route_dest` (leaving `route_origin` empty) on submit. Can contain legacy delimiters (→, ->, -) for backward compatibility.
-9. **License Expiry Date** (maps to `expiration_date`): Required.
-10. **Carrier Type** (maps to `carrier_type`): Public or Private selection.
-11. **Transported Materials** (maps to `hazmat_type`): Required.
+- Required field checks for company, vehicle, record number, and license number.
+- Basic character-level validation where the business domain requires it.
+- Confirmation dialogs for destructive actions such as deletion.
 
-This validation is complemented by the frontend and backend mapping layers to handle compatibility transformations (e.g. auto-generating internal license numbers and splitting compound fields).
+This is not a replacement for backend validation. It is a usability improvement that reduces the number of preventable API errors.
 
 ## 8. Dashboard Presentation
 
@@ -143,20 +131,13 @@ Why this matters:
 - [Backend Design](backend_design.md)
 - [Error Handling and Validation](error_handling_and_validation.md)
 
-## Recent UI Changes (Late May 2026)
-
-- **Add Contract Form Refactoring:** The multi-section form has been simplified into a single "Add Contract" section. Unexposed backend fields (e.g. driver details like name/phone, checkpoints) are omitted from the UI layer to streamline the transport registration flow.
-- **KPI Card and Statistics Simplification:** Removed all driver details (name/phone), total vehicles, and total drivers counters from the UI and statistics. The dashboard now features a 3-tier KPI structure: Active Contracts, Expired Contracts, and Total Contracts.
-- **Touched state Validation UX:** Modified validation trigger logic to prevent pre-emptive red validation error borders from rendering before a user interacts with the form.
-- **Payload Mapping Adapter:** Form submissions are run through a mapping adapter inside `handleFormSubmit()` in `main_dashboard_controller.js` to ensure backward-compatibility. The adapter auto-generates internal `license_number` as `'LIC-' + record_number`, splits `vehicle_type_category` into `vehicle_type` and `vehicle_category`, and maps the simplified single `route` input directly to `route_dest` (while maintaining backward compatibility by splitting on delimiters if present) before sending the POST request.
-
-## Recent UI Changes (Early May 2026)
+## Recent UI Changes (May 2026)
 
 The frontend was updated to integrate with newly added backend features:
 
 - **Login & Settings:** The Settings view includes a Change Password form wired to `POST /auth/change-password`. The renderer now expects and forwards an `Authorization` header for protected operations. Client networking is implemented in `frontend/js/frontend_api_client.js` and UI wiring in `frontend/js/main_dashboard_controller.js`.
-- **Add Contract Address Select:** The `company_address` input on the Add Contract flow was changed to a combo/select control to support pre-populated addresses and ad-hoc entries. See [frontend/js/main_dashboard_controller.js](frontend/js/main_dashboard_controller.js).
-- **Contract actions:** UI placeholders were added to support Renew and Suspend actions; the corresponding API calls are `POST /api/licenses/{id}/renew` and `POST /api/licenses/{id}/suspend`. Buttons and confirmation flows will be added to the contract list/detail views in a follow-up.
+- **Add Contract:** The `company_address` input on the Add Contract flow was changed to a combo/select control to support pre-populated addresses and ad-hoc entries. See [frontend/js/main_dashboard_controller.js](frontend/js/main_dashboard_controller.js).
+- **License actions:** UI placeholders were added to support Renew and Suspend actions for licenses; the corresponding API calls are `POST /api/licenses/{id}/renew` and `POST /api/licenses/{id}/suspend`. Buttons and confirmation flows will be added to the license list/detail views in a follow-up.
 - **Duplicate enterprise handling:** The frontend continues to post company creation requests to `POST /api/companies` and now relies on backend validation to prevent duplicates by registration number or name.
 
 Notes:
@@ -183,7 +164,7 @@ Notes:
 ## Feature Views
 
 - Dashboard (KPIs + expiring items + forecast).
-- Add contract form (single-section layout).
+- Add contract wizard (4-step guided flow).
 - Search and deleted contracts views.
 - Statistics page with Chart.js visualizations.
 - Welcome page loaded from `frontend/pages/welcome.html`.

@@ -1,6 +1,9 @@
 import time
+import json
+from pathlib import Path
 from datetime import datetime
 from database.connection_handler import Database
+
 
 # ---------------------------------------------------------
 # In-Memory Cache to prevent heavy re-computations
@@ -21,6 +24,12 @@ class StatisticsService:
     """
     def __init__(self):
         self.db = Database()
+
+    def clear_cache(self):
+        """Invalidates the in-memory cache to ensure statistics update in real-time on mutations."""
+        global CACHE_STORE
+        CACHE_STORE["data"] = None
+        CACHE_STORE["timestamp"] = 0
 
     def get_dashboard_statistics(self):
         """
@@ -49,6 +58,14 @@ class StatisticsService:
             public_carriers = carrier_types.get("Public", 0)
             private_carriers = carrier_types.get("Private", 0)
 
+            # License counts
+            cursor.execute("SELECT COUNT(*) FROM licenses WHERE is_deleted=0")
+            total_licenses = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM licenses WHERE status='active' AND is_deleted=0")
+            active_licenses = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM licenses WHERE status='expired' AND is_deleted=0")
+            expired_licenses = cursor.fetchone()[0]
+
             # This join is the key business metric for the UI: it counts companies
             # that currently have at least one active license attached through a
             # vehicle. Removing the DISTINCT would overcount companies with multiple
@@ -65,31 +82,42 @@ class StatisticsService:
             inactive_carriers = total_carriers - active_carriers
 
             # 2. MIDDLE SECTION & BOTTOM SECTION: MUNICIPALITY ANALYSIS
-            cursor.execute("""
-                SELECT c.id, c.address, 
-                       CASE WHEN l.status = 'active' THEN 1 ELSE 0 END as is_active
-                FROM companies c
-                LEFT JOIN vehicles v ON c.id = v.company_id
-                LEFT JOIN licenses l ON v.id = l.vehicle_id
-                WHERE c.is_deleted=0
-            """)
-            company_rows = cursor.fetchall()
+            # Load Sétif communes from setif_communes.json (single source of truth)
+            communes_file = Path(__file__).parent.parent / "frontend" / "data" / "setif_communes.json"
+            setif_communes = []
+            if communes_file.exists():
+                try:
+                    with open(communes_file, "r", encoding="utf-8") as f:
+                        setif_communes = json.load(f).get("communes", [])
+                except Exception as e:
+                    print("Error loading setif communes in stats service:", e)
 
-            municipality_stats = {}
-            for row in company_rows:
-                address = row[1] or "Unknown"
-                municipality = address.split(',')[-1].strip() if ',' in address else address
-                
-                if municipality not in municipality_stats:
-                    municipality_stats[municipality] = {"total": 0, "active": 0, "inactive": 0}
-                
-                municipality_stats[municipality]["total"] += 1
-                if row[2] == 1:
-                    municipality_stats[municipality]["active"] += 1
-                else:
-                    municipality_stats[municipality]["inactive"] += 1
+            # Query active/inactive licenses by activity_location
+            cursor.execute("""
+                SELECT activity_location,
+                       CASE WHEN status = 'active' THEN 1 ELSE 0 END as is_active
+                FROM licenses
+                WHERE is_deleted = 0 AND activity_location IS NOT NULL
+            """)
+            license_rows = cursor.fetchall()
+
+            municipality_stats = {commune: {"total": 0, "active": 0, "inactive": 0} for commune in setif_communes}
+            for row in license_rows:
+                loc = row["activity_location"]
+                if loc in municipality_stats:
+                    municipality_stats[loc]["total"] += 1
+                    if row["is_active"] == 1:
+                        municipality_stats[loc]["active"] += 1
+                    else:
+                        municipality_stats[loc]["inactive"] += 1
+
+            # Only include municipalities with total > 0 to keep statistics clean
+            municipality_stats = {k: v for k, v in municipality_stats.items() if v["total"] > 0}
 
             # 3. BOTTOM SECTION: ACTIVITY OVER TIME
+            weekly_activity = self._get_activity_series(cursor, "strftime('%Y-W%W', signature_date)", "week", 180)
+            monthly_activity = self._get_activity_series(cursor, "strftime('%Y-%m', signature_date)", "month", 365)
+            yearly_activity = self._get_activity_series(cursor, "strftime('%Y', signature_date)", "year", 3650)
             daily_activity = self._get_activity_series(cursor, "date(signature_date)", "date", 30)
             
             # 4. PREDICTIVE INSIGHTS: Forecasting Expiries
@@ -97,6 +125,9 @@ class StatisticsService:
 
             activity = {
                 "daily": daily_activity,
+                "weekly": weekly_activity,
+                "monthly": monthly_activity,
+                "yearly": yearly_activity,
                 "forecast": forecast
             }
 
@@ -106,7 +137,10 @@ class StatisticsService:
                     "active": active_carriers,
                     "inactive": inactive_carriers,
                     "public": public_carriers,
-                    "private": private_carriers
+                    "private": private_carriers,
+                    "total_licenses": total_licenses,
+                    "active_licenses": active_licenses,
+                    "expired_licenses": expired_licenses
                 },
                 "municipalities": municipality_stats,
                 "activity": activity

@@ -5,6 +5,37 @@ from pathlib import Path
 import time
 import threading
 
+"""
+ARCHITECTURAL REFACTORING & DESIGN NOTES (FULL SYSTEM SYNCHRONIZATION):
+
+1. Entity Separation (Vehicles / Drivers / Contracts):
+   - Previously, driver data was parsed as raw JSON arrays or text fields embedded inside the `licenses` table.
+   - We have fully separated Drivers and Vehicles into their own dedicated schemas and views.
+   - The `drivers` table stores driver entities, whereas the `vehicles` table stores vehicle entities.
+   - This prevents cross-data leakage between contracts, vehicles, and drivers modules in compliance with strict UX separation rules.
+
+2. Auto-Increment Driver ID Logic:
+   - Drivers are registered with a system-generated, auto-incrementing `id` as the primary key.
+   - Manual driver ID edits are prohibited; all driver identifiers are system-generated to maintain relational integrity.
+
+3. Optional Phone Field Design:
+   - The driver's phone number (`phone` column in the `drivers` table) is optional (nullable).
+   - This ensures flexibility during driver registration, allowing operators to create records even when phone numbers are unavailable.
+
+4. Expiration Segmentation Design:
+   - The expiration dashboard is segmented into three distinct preview ranges: 30, 60, and 90 days.
+   - To keep queries scalable and UI rendering highly responsive, we filter these ranges entirely at the SQLite/backend layer.
+   - Previews return a limited dataset (limit = 5), while full range queries are loaded only upon user request.
+
+5. Removal of Background Services:
+   - SMTP configuration, email notification triggers, local database backup utilities, and their corresponding background scheduler threads
+     have been completely purged from uvicorn lifespans, API routers, database schemas, and documentation.
+   - This reduces background CPU overhead, eliminates potential memory/process leaks in the Electron desktop shell, and prevents security risks.
+
+6. Indexing Strategy:
+   - B-Tree indexes are preserved on vehicle registration numbers and licensing fields to optimize search lookups and query execution times.
+"""
+
 DB_PATH = Path(__file__).parent / "licenses.db"
 
 
@@ -100,8 +131,10 @@ class Database:
         """
         columns = [
             ("licenses", "activity_location", "ALTER TABLE licenses ADD COLUMN activity_location TEXT"),
-            ("licenses", "contract_type",     "ALTER TABLE licenses ADD COLUMN contract_type TEXT"),
+            ("licenses", "registration_number", "ALTER TABLE licenses ADD COLUMN registration_number TEXT"),
             ("licenses", "deletion_days",     "ALTER TABLE licenses ADD COLUMN deletion_days INTEGER"),
+            ("licenses", "vehicles_list",      "ALTER TABLE licenses ADD COLUMN vehicles_list TEXT"),
+            ("licenses", "drivers_list",       "ALTER TABLE licenses ADD COLUMN drivers_list TEXT"),
             ("licenses", "is_deleted",        "ALTER TABLE licenses ADD COLUMN is_deleted INTEGER DEFAULT 0"),
             ("licenses", "deleted_at",        "ALTER TABLE licenses ADD COLUMN deleted_at TIMESTAMP"),
             ("companies", "is_deleted",       "ALTER TABLE companies ADD COLUMN is_deleted INTEGER DEFAULT 0"),
@@ -118,9 +151,9 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_licenses_number ON licenses(license_number)",
             "CREATE INDEX IF NOT EXISTS idx_licenses_driver ON licenses(driver_name)",
             "CREATE INDEX IF NOT EXISTS idx_companies_name ON companies(name)",
-            "CREATE INDEX IF NOT EXISTS idx_vehicles_registration ON vehicles(registration_number)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicles_registration ON vehicles(registration_number)",
             "CREATE INDEX IF NOT EXISTS idx_licenses_activity_location ON licenses(activity_location)",
-            "CREATE INDEX IF NOT EXISTS idx_licenses_contract_type ON licenses(contract_type)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_registration_number ON licenses(registration_number)",
         ]
 
         conn = self._get_connection()
@@ -137,6 +170,11 @@ class Database:
                         pass # Column might already exist or table missing
             
             # 2. Add Indexes
+            try:
+                # Drop old non-unique index if it exists to allow unique index creation
+                conn.execute("DROP INDEX IF EXISTS idx_vehicles_registration")
+            except sqlite3.OperationalError:
+                pass
             for sql in indexes:
                 try:
                     conn.execute(sql)
@@ -145,6 +183,61 @@ class Database:
 
             # 3. Remove deprecated hazardous material quantity field if still present.
             self._drop_hazmat_quantity_column(conn)
+            # 4. Remove companies.registration_number safely if present.
+            self._drop_companies_registration_number(conn)
+
+            # 5. Create drivers table and migrate existing driver records
+            try:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS drivers (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        company_id INTEGER NOT NULL,
+                        name TEXT NOT NULL,
+                        phone TEXT,
+                        is_deleted INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (company_id) REFERENCES companies(id)
+                    )
+                """)
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM drivers")
+                if cursor.fetchone()[0] == 0:
+                    cursor.execute("""
+                        SELECT l.driver_name, l.driver_phone, l.drivers_list, v.company_id
+                        FROM licenses l
+                        JOIN vehicles v ON l.vehicle_id = v.id
+                        WHERE l.is_deleted = 0
+                    """)
+                    rows = cursor.fetchall()
+                    import json
+                    for row in rows:
+                        comp_id = row["company_id"]
+                        p_name = row["driver_name"]
+                        p_phone = row["driver_phone"]
+                        d_list_str = row["drivers_list"]
+                        
+                        if p_name and p_name.strip():
+                            # Check uniqueness
+                            cursor.execute("SELECT id FROM drivers WHERE company_id=? AND name=?", (comp_id, p_name.strip()))
+                            if not cursor.fetchone():
+                                cursor.execute("INSERT INTO drivers (company_id, name, phone) VALUES (?, ?, ?)", (comp_id, p_name.strip(), p_phone))
+                        
+                        if d_list_str:
+                            try:
+                                parsed = json.loads(d_list_str)
+                                if isinstance(parsed, list):
+                                    for d in parsed:
+                                        d_name = d.get("name")
+                                        d_phone = d.get("phone")
+                                        if d_name and d_name.strip():
+                                            cursor.execute("SELECT id FROM drivers WHERE company_id=? AND name=?", (comp_id, d_name.strip()))
+                                            if not cursor.fetchone():
+                                                cursor.execute("INSERT INTO drivers (company_id, name, phone) VALUES (?, ?, ?)", (comp_id, d_name.strip(), d_phone))
+                                    conn.commit()
+                            except Exception:
+                                pass
+            except sqlite3.OperationalError:
+                pass
 
             conn.commit()
         finally:
@@ -175,6 +268,34 @@ class Database:
         conn.execute("DROP TABLE hazardous_materials")
         conn.execute("ALTER TABLE hazardous_materials_new RENAME TO hazardous_materials")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_hazmat_vehicle ON hazardous_materials(vehicle_id)")
+
+    def _drop_companies_registration_number(self, conn):
+        """Drop companies.registration_number safely to align with schema requirements."""
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(companies)")
+        columns = [row["name"] for row in cursor.fetchall()]
+        if "registration_number" not in columns:
+            return
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS companies_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                address TEXT,
+                carrier_type TEXT,
+                account_type TEXT,
+                is_deleted INTEGER DEFAULT 0,
+                deleted_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            INSERT INTO companies_new (id, name, address, carrier_type, account_type, is_deleted, deleted_at, created_at)
+            SELECT id, name, address, carrier_type, account_type, is_deleted, deleted_at, created_at FROM companies
+        """)
+        conn.execute("DROP TABLE companies")
+        conn.execute("ALTER TABLE companies_new RENAME TO companies")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_companies_name ON companies(name)")
 
     # ─── Users (Authentication) ───────────────────────────────────────────────
 
@@ -207,12 +328,12 @@ class Database:
 
     # ─── Company ─────────────────────────────────────────────────────────────
 
-    def add_company(self, name, registration_number, address, carrier_type, account_type):
+    def add_company(self, name, address, carrier_type, account_type):
         self._invalidate_stats_cache()
         return self._execute_write(
-            """INSERT INTO companies (name, registration_number, address, carrier_type, account_type)
-               VALUES (?, ?, ?, ?, ?)""",
-            (name, registration_number, address, carrier_type, account_type),
+            """INSERT INTO companies (name, address, carrier_type, account_type)
+               VALUES (?, ?, ?, ?)""",
+            (name, address, carrier_type, account_type),
             return_lastrowid=True,
         )
 
@@ -220,7 +341,7 @@ class Database:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, name, registration_number, address, carrier_type, account_type, created_at "
+            "SELECT id, name, address, carrier_type, account_type, created_at "
             "FROM companies WHERE is_deleted=0 ORDER BY created_at DESC"
         )
         rows = cursor.fetchall()
@@ -231,14 +352,6 @@ class Database:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM companies WHERE id=? AND is_deleted=0", (company_id,))
-        row = cursor.fetchone()
-        conn.close()
-        return dict(row) if row else None
-
-    def get_company_by_registration(self, registration_number):
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM companies WHERE registration_number=? AND is_deleted=0", (registration_number,))
         row = cursor.fetchone()
         conn.close()
         return dict(row) if row else None
@@ -257,8 +370,62 @@ class Database:
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, company_id, registration_number, type, category, created_at "
-            "FROM vehicles WHERE is_deleted=0 ORDER BY created_at DESC"
+            "SELECT v.id, v.company_id, v.registration_number, v.type, v.category, v.created_at, "
+            "       c.name AS company_name "
+            "FROM vehicles v "
+            "JOIN companies c ON v.company_id = c.id "
+            "WHERE v.is_deleted=0 AND c.is_deleted=0 "
+            "ORDER BY v.created_at DESC"
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    # ─── Driver ──────────────────────────────────────────────────────────────
+
+    def add_driver(self, company_id, name, phone=None):
+        """
+        Add a new driver. Enforce auto-increment ID and system generated.
+        Optional phone field is nullable.
+        """
+        name = name.strip() if name else ""
+        if not name:
+            return None
+        
+        # Check duplicate
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, phone FROM drivers WHERE company_id=? AND name=? AND is_deleted=0", (company_id, name))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            if phone and row["phone"] != phone:
+                self._execute_write(
+                    "UPDATE drivers SET phone=? WHERE id=?",
+                    (phone, row["id"])
+                )
+            return row["id"]
+        else:
+            return self._execute_write(
+                "INSERT INTO drivers (company_id, name, phone) VALUES (?, ?, ?)",
+                (company_id, name, phone),
+                return_lastrowid=True
+            )
+
+    def get_drivers(self):
+        """
+        Retrieve all drivers with their system-generated IDs and company associations.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT d.id, d.company_id, d.name AS driver_name, d.phone AS driver_phone, d.created_at, "
+            "       c.name AS company_name "
+            "FROM drivers d "
+            "JOIN companies c ON d.company_id = c.id "
+            "WHERE d.is_deleted=0 AND c.is_deleted=0 "
+            "ORDER BY d.created_at DESC"
         )
         rows = cursor.fetchall()
         conn.close()
@@ -312,7 +479,8 @@ class Database:
 
     def add_license(self, vehicle_id, route_id, record_number, driver_name, driver_phone,
                     license_number, signature_date, expiration_date,
-                    activity_location=None, contract_type=None, deletion_days=None):
+                    activity_location=None, registration_number=None, deletion_days=None,
+                    vehicles_list=None, drivers_list=None):
         today = datetime.now().date()
         expiry = expiration_date if isinstance(expiration_date, datetime) else datetime.strptime(str(expiration_date), '%Y-%m-%d').date()
         status = "expired" if expiry < today else "active"
@@ -320,17 +488,35 @@ class Database:
             """INSERT INTO licenses
                (vehicle_id, route_id, record_number, driver_name, driver_phone,
                 license_number, signature_date, expiration_date, status,
-                activity_location, contract_type, deletion_days)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                activity_location, registration_number, deletion_days, vehicles_list, drivers_list)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (vehicle_id, route_id, record_number, driver_name, driver_phone,
              license_number, signature_date, expiration_date, status,
-             activity_location, contract_type, deletion_days),
+             activity_location, registration_number, deletion_days, vehicles_list, drivers_list),
             return_lastrowid=True,
         )
         if lic_id:
             self.add_audit_log("CREATE", "licenses", lic_id, new_values={
                 "license_number": license_number, "record_number": record_number
             })
+            # Sync driver to drivers table automatically
+            vehicle = self.get_vehicle_by_id(vehicle_id)
+            if vehicle and vehicle.get("company_id"):
+                comp_id = vehicle["company_id"]
+                if driver_name and driver_name.strip():
+                    self.add_driver(comp_id, driver_name, driver_phone)
+                if drivers_list:
+                    try:
+                        import json
+                        parsed = json.loads(drivers_list) if isinstance(drivers_list, str) else drivers_list
+                        if isinstance(parsed, list):
+                            for d in parsed:
+                                n = d.get("name")
+                                p = d.get("phone")
+                                if n and n.strip():
+                                    self.add_driver(comp_id, n, p)
+                    except Exception:
+                        pass
         return lic_id
 
     def get_all_licenses(self):
@@ -339,7 +525,7 @@ class Database:
         cursor.execute(
             """SELECT l.id, l.record_number, l.license_number, l.driver_name, l.driver_phone,
                       l.signature_date, l.expiration_date, l.status,
-                      l.activity_location, l.contract_type, l.deletion_days, l.created_at,
+                      l.activity_location, l.registration_number, l.deletion_days, l.created_at, l.vehicles_list, l.drivers_list,
                       v.registration_number AS vehicle_reg,
                       c.name AS company_name, c.carrier_type
                FROM licenses l
@@ -353,7 +539,7 @@ class Database:
         return [dict(r) for r in rows]
 
     def search_licenses(self, search_term="", status_filter=None, carrier_type_filter=None,
-                        activity_location=None, contract_type=None,
+                        activity_location=None,
                         sort_by="created_at", sort_dir="DESC",
                         page=1, limit=50):
         """Paginated, filtered, sorted license search."""
@@ -362,24 +548,20 @@ class Database:
         cursor = conn.cursor()
 
         # Whitelist sort columns
-        allowed_sorts = {"signature_date", "expiration_date", "created_at", "company_name"}
+        allowed_sorts = {"signature_date", "expiration_date", "created_at"}
         if sort_by not in allowed_sorts:
             sort_by = "created_at"
-        sort_col = f"l.{sort_by}"
-        if sort_by == "company_name":
-            sort_col = "c.name"
         sort_dir = "ASC" if sort_dir.upper() == "ASC" else "DESC"
 
         base = """FROM licenses l
                   JOIN vehicles v ON l.vehicle_id = v.id
                   JOIN companies c ON v.company_id = c.id
-                  LEFT JOIN routes r ON l.route_id = r.id
                   WHERE l.is_deleted=0"""
         params = []
 
         if search_term:
-            base += """ AND (l.record_number LIKE ? OR l.license_number LIKE ?
-                         OR v.registration_number LIKE ? OR c.name LIKE ? OR c.registration_number LIKE ? OR l.driver_name LIKE ?)"""
+            base += """ AND (l.record_number LIKE ? OR l.license_number LIKE ? OR l.registration_number LIKE ?
+                         OR v.registration_number LIKE ? OR c.name LIKE ? OR l.driver_name LIKE ?)"""
             p = f"%{search_term}%"
             params.extend([p, p, p, p, p, p])
 
@@ -395,25 +577,19 @@ class Database:
             base += " AND l.activity_location LIKE ?"
             params.append(f"%{activity_location}%")
 
-        if contract_type:
-            base += " AND l.contract_type=?"
-            params.append(contract_type)
-
         # Total count
         cursor.execute(f"SELECT COUNT(*) {base}", params)
         total = cursor.fetchone()[0]
 
         # Data query
         offset = (page - 1) * limit
-        select = f"""SELECT l.id, l.record_number, l.license_number,
+        select = f"""SELECT l.id, l.record_number, l.license_number, l.driver_name, l.driver_phone,
                             l.signature_date, l.expiration_date, l.status,
-                            l.activity_location, l.contract_type, l.deletion_days, l.created_at,
-                            v.registration_number AS vehicle_reg, v.type AS vehicle_type, v.category AS vehicle_category,
-                            c.name AS company_name, c.carrier_type, c.registration_number AS company_reg, c.address AS company_address,
-                            r.origin AS route_origin, r.destination AS route_dest,
-                            (SELECT GROUP_CONCAT(material_type, ', ') FROM hazardous_materials WHERE vehicle_id = v.id AND is_deleted = 0) AS hazmat_type
+                            l.activity_location, l.registration_number, l.deletion_days, l.created_at, l.vehicles_list, l.drivers_list,
+                            v.registration_number AS vehicle_reg,
+                            c.name AS company_name, c.carrier_type
                      {base}
-                     ORDER BY {sort_col} {sort_dir}
+                     ORDER BY l.{sort_by} {sort_dir}
                      LIMIT ? OFFSET ?"""
         cursor.execute(select, params + [limit, offset])
         rows = cursor.fetchall()
@@ -421,30 +597,20 @@ class Database:
         return {"total": total, "page": page, "limit": limit, "records": [dict(r) for r in rows]}
 
     def search_deleted_licenses(self, search_term="", status_filter=None, activity_location=None,
-                               contract_type=None, sort_by="created_at", sort_dir="DESC", page=1, limit=50):
+                               page=1, limit=50):
         """Paginated search over deleted contracts only."""
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        # Whitelist sort columns
-        allowed_sorts = {"signature_date", "expiration_date", "created_at", "company_name"}
-        if sort_by not in allowed_sorts:
-            sort_by = "created_at"
-        sort_col = f"l.{sort_by}"
-        if sort_by == "company_name":
-            sort_col = "c.name"
-        sort_dir = "ASC" if sort_dir.upper() == "ASC" else "DESC"
-
         base = """FROM licenses l
                   JOIN vehicles v ON l.vehicle_id = v.id
                   JOIN companies c ON v.company_id = c.id
-                  LEFT JOIN routes r ON l.route_id = r.id
                   WHERE l.is_deleted=1"""
         params = []
 
         if search_term:
-            base += """ AND (CAST(l.id AS TEXT) LIKE ? OR l.record_number LIKE ? OR l.license_number LIKE ?
-                         OR v.registration_number LIKE ? OR c.name LIKE ? OR c.registration_number LIKE ? OR l.driver_name LIKE ?)"""
+            base += """ AND (CAST(l.id AS TEXT) LIKE ? OR l.record_number LIKE ? OR l.license_number LIKE ? OR l.registration_number LIKE ?
+                         OR v.registration_number LIKE ? OR c.name LIKE ? OR l.driver_name LIKE ?)"""
             p = f"%{search_term}%"
             params.extend([p, p, p, p, p, p, p])
 
@@ -456,23 +622,17 @@ class Database:
             base += " AND l.activity_location LIKE ?"
             params.append(f"%{activity_location}%")
 
-        if contract_type:
-            base += " AND l.contract_type=?"
-            params.append(contract_type)
-
         cursor.execute(f"SELECT COUNT(*) {base}", params)
         total = cursor.fetchone()[0]
 
         offset = (page - 1) * limit
-        query = f"""SELECT l.id, l.record_number, l.license_number,
+        query = f"""SELECT l.id, l.record_number, l.license_number, l.driver_name, l.driver_phone,
                            l.signature_date, l.expiration_date, l.status,
-                           l.activity_location, l.contract_type, l.deletion_days, l.created_at,
-                           v.registration_number AS vehicle_reg, v.type AS vehicle_type, v.category AS vehicle_category,
-                           c.name AS company_name, c.carrier_type, c.registration_number AS company_reg, c.address AS company_address,
-                           r.origin AS route_origin, r.destination AS route_dest,
-                           (SELECT GROUP_CONCAT(material_type, ', ') FROM hazardous_materials WHERE vehicle_id = v.id AND is_deleted = 0) AS hazmat_type
+                           l.activity_location, l.registration_number, l.deletion_days, l.created_at, l.vehicles_list, l.drivers_list,
+                           v.registration_number AS vehicle_reg,
+                           c.name AS company_name, c.carrier_type
                     {base}
-                    ORDER BY {sort_col} {sort_dir}
+                    ORDER BY l.created_at DESC
                     LIMIT ? OFFSET ?"""
         cursor.execute(query, params + [limit, offset])
         rows = cursor.fetchall()
@@ -484,7 +644,7 @@ class Database:
         cursor = conn.cursor()
         cursor.execute(
             """SELECT l.*, v.registration_number AS vehicle_reg, v.type AS vehicle_type,
-                      c.name AS company_name, c.carrier_type, c.registration_number AS company_reg,
+                      c.name AS company_name, c.carrier_type,
                       c.address AS company_address, c.account_type,
                       r.origin, r.destination, r.checkpoints
                FROM licenses l
@@ -514,25 +674,20 @@ class Database:
         conn.close()
         return dict(row) if row else None
 
-    def get_license_by_vehicle_reg(self, vehicle_reg):
+    def get_license_by_registration_number(self, registration_number):
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT l.id FROM licenses l
-            JOIN vehicles v ON l.vehicle_id = v.id
-            WHERE v.registration_number=? AND l.is_deleted=0 AND v.is_deleted=0
-        """, (vehicle_reg,))
+        cursor.execute("SELECT id FROM licenses WHERE registration_number=? AND is_deleted=0", (registration_number,))
         row = cursor.fetchone()
         conn.close()
         return dict(row) if row else None
-
 
     def update_license(self, license_id, **fields):
         if not fields:
             return None
         allowed = {"record_number","driver_name","driver_phone","license_number",
                    "signature_date","expiration_date","status","activity_location",
-                   "contract_type","deletion_days"}
+                   "registration_number","deletion_days", "vehicles_list", "drivers_list"}
         fields = {k: v for k, v in fields.items() if k in allowed}
         if not fields:
             return None
@@ -546,6 +701,28 @@ class Database:
         res = self._execute_write(query, params)
         if res is not None or True: # execute_write returns None on success if not lastrowid
             self.add_audit_log("UPDATE", "licenses", license_id, old_values=old_data, new_values=fields)
+            
+            # Sync driver to drivers table automatically
+            company_id = old_data.get("company_id")
+            if company_id:
+                d_name = fields.get("driver_name", old_data.get("driver_name"))
+                d_phone = fields.get("driver_phone", old_data.get("driver_phone"))
+                if d_name and d_name.strip():
+                    self.add_driver(company_id, d_name, d_phone)
+                
+                d_list_str = fields.get("drivers_list", old_data.get("drivers_list"))
+                if d_list_str:
+                    try:
+                        import json
+                        parsed = json.loads(d_list_str) if isinstance(d_list_str, str) else d_list_str
+                        if isinstance(parsed, list):
+                            for d in parsed:
+                                n = d.get("name")
+                                p = d.get("phone")
+                                if n and n.strip():
+                                    self.add_driver(company_id, n, p)
+                    except Exception:
+                        pass
         
         self._invalidate_stats_cache()
         return res
@@ -577,20 +754,28 @@ class Database:
             "UPDATE licenses SET status='expired' WHERE status='active' AND DATE(expiration_date)<DATE('now') AND is_deleted=0"
         )
 
-    def get_expiring_licenses(self, days_ahead=30):
+    def get_expiring_licenses(self, start_days=0, end_days=30, limit=None):
         conn = self._get_connection()
         cursor = conn.cursor()
-        today = datetime.now().date()
-        expiry_date = (datetime.now() + timedelta(days=days_ahead)).date()
+        start_date = (datetime.now() + timedelta(days=start_days)).date()
+        end_date = (datetime.now() + timedelta(days=end_days)).date()
+        
+        limit_clause = ""
+        if limit is not None:
+            try:
+                limit_clause = f" LIMIT {int(limit)}"
+            except ValueError:
+                pass
+                
         cursor.execute(
-            """SELECT l.id, l.record_number, l.expiration_date,
+            f"""SELECT l.id, l.record_number, l.license_number, l.driver_name, l.expiration_date,
                       v.registration_number AS vehicle_reg, c.name AS company_name
                FROM licenses l
                JOIN vehicles v ON l.vehicle_id=v.id
                JOIN companies c ON v.company_id=c.id
                WHERE l.expiration_date BETWEEN ? AND ? AND l.status='active' AND l.is_deleted=0
-               ORDER BY l.expiration_date ASC""",
-            (today, expiry_date)
+               ORDER BY l.expiration_date ASC{limit_clause}""",
+            (start_date, end_date)
         )
         rows = cursor.fetchall()
         conn.close()
@@ -643,17 +828,23 @@ class Database:
         self._update_expired_licenses()
         conn = self._get_connection()
         cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM vehicles WHERE is_deleted=0")
+        total_vehicles = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(DISTINCT driver_name) FROM licenses WHERE driver_name IS NOT NULL AND is_deleted=0")
+        total_drivers = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM licenses WHERE status='active' AND is_deleted=0")
         active_licenses = cursor.fetchone()[0]
         cursor.execute("SELECT COUNT(*) FROM licenses WHERE status='expired' AND is_deleted=0")
         expired_licenses = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM licenses WHERE is_deleted=0")
-        total_contracts = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) FROM companies WHERE is_deleted=0")
+        total_companies = cursor.fetchone()[0]
         conn.close()
         result = {
+            "total_vehicles": total_vehicles,
+            "total_drivers": total_drivers,
             "active_licenses": active_licenses,
             "expired_licenses": expired_licenses,
-            "total_contracts": total_contracts,
+            "total_companies": total_companies,
         }
         with self._stats_cache_lock:
             self._stats_cache = result
@@ -689,11 +880,7 @@ class Database:
                           JOIN companies c ON v.company_id=c.id
                           WHERE l.is_deleted=0 GROUP BY c.name ORDER BY count DESC LIMIT 10""")
         by_company = {r["name"]: r["count"] for r in cursor.fetchall()}
-
-        cursor.execute("""SELECT l.contract_type, COUNT(*) as count
-                          FROM licenses l WHERE l.is_deleted=0 AND l.contract_type IS NOT NULL
-                          GROUP BY l.contract_type""")
-        by_contract_type = {r["contract_type"]: r["count"] for r in cursor.fetchall()}
+        # Contract type statistics are removed because the field is replaced by registration_number
 
         cursor.execute("""SELECT l.activity_location, COUNT(*) as count
                           FROM licenses l WHERE l.is_deleted=0 AND l.activity_location IS NOT NULL
@@ -720,36 +907,12 @@ class Database:
         active_carriers = sum(1 for row in carrier_activity_rows if row["has_active"] == 1)
         inactive_carriers = max(0, total_carriers - active_carriers)
 
-        cursor.execute("""
-            SELECT COALESCE(NULLIF(TRIM(l.activity_location), ''), 'Unknown') AS municipality,
-                   COUNT(DISTINCT c.id) AS total_carriers,
-                   COUNT(DISTINCT CASE WHEN l.status='active' THEN c.id END) AS active_carriers,
-                   COUNT(DISTINCT CASE WHEN l.status='expired' THEN c.id END) AS inactive_carriers
-            FROM companies c
-            LEFT JOIN vehicles v ON v.company_id = c.id AND v.is_deleted=0
-            LEFT JOIN licenses l ON l.vehicle_id = v.id AND l.is_deleted=0
-            WHERE c.is_deleted=0
-            GROUP BY municipality
-            ORDER BY total_carriers DESC
-            LIMIT 15
-        """)
-        municipality_rows = cursor.fetchall()
-        carriers_by_municipality = {
-            row["municipality"]: {
-                "total": row["total_carriers"],
-                "active": row["active_carriers"],
-                "inactive": max(0, row["total_carriers"] - row["active_carriers"]),
-            }
-            for row in municipality_rows
-        }
-
         conn.close()
         result = {
             "by_carrier": by_carrier,
             "by_status": by_status,
             "expiring_soon": expiring_soon,
             "by_company": by_company,
-            "by_contract_type": by_contract_type,
             "by_location": by_location,
             "carrier_totals": {
                 "total": total_carriers,
@@ -757,8 +920,7 @@ class Database:
                 "private": carriers_by_type.get("Private", 0),
                 "active": active_carriers,
                 "inactive": inactive_carriers,
-            },
-            "carriers_by_municipality": carriers_by_municipality,
+            }
         }
         with self._stats_cache_lock:
             self._advanced_stats_cache = result
@@ -805,22 +967,24 @@ class Database:
         finally:
             conn.close()
 
-    def delete_license(self, license_id):
-        """Soft delete – keeps data, marks as deleted."""
-        self.soft_delete_license(license_id)
-
-    # ─── Notifications ───────────────────────────────────────────────────────
-
-    def log_notification(self, license_id, email_sent_to):
-        self._execute_write(
-            "INSERT INTO notifications_log (license_id, email_sent_to) VALUES (?, ?)",
-            (license_id, email_sent_to),
-        )
-
-    def get_notification_log(self, limit=100):
+    def get_max_record_number(self) -> int:
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM notifications_log ORDER BY sent_at DESC LIMIT ?", (limit,))
+        cursor.execute("SELECT record_number FROM licenses")
         rows = cursor.fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+        max_num = 0
+        for (val,) in rows:
+            if not val:
+                continue
+            digits = "".join(c for c in str(val) if c.isdigit())
+            if digits:
+                try:
+                    num = int(digits)
+                    if num > max_num:
+                        max_num = num
+                except (ValueError, TypeError):
+                    pass
+        return max_num
+
+

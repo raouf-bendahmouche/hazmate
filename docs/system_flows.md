@@ -22,10 +22,8 @@ sequenceDiagram
     participant SQLite as licenses.db
 
     User->>UI: fill form and submit contract-form
-    Note over UI: UI validates inputs (touched checks)<br/>and maps clean fields to legacy payload
-    UI->>Client: API.createLicense(payload)
+    UI->>Client: API.createLicense(data)
     Client->>API: POST /api/licenses
-    Note over API: API maps clean fields to legacy dict<br/>(if backend fallback is triggered)
     API->>DB: get_license_by_number() / get_license_by_record_number()
     API->>Service: create_complete_license(data)
     Service->>Rules: validate_license_creation(data)
@@ -46,7 +44,7 @@ sequenceDiagram
 
 ### Explanation
 
-- `main_dashboard_controller.js` owns the form, touched/dirty validation state, and frontend mapping logic. It exists so the operator can enter one complete record in a single pass. If the controller were missing, there would be no frontend orchestration for the contract entry workflow.
+- `main_dashboard_controller.js` owns the form and form validation. It exists so the operator can enter one complete record in a single pass. If the controller were missing, there would be no frontend orchestration for the contract entry workflow.
 - `frontend_api_client.js` exists to keep request construction and response normalization in one place. If contract creation had to be hand-coded in the page, error handling would be duplicated and inconsistent.
 - The FastAPI endpoint in `api_endpoint_manager.py` exists to validate the payload boundary and reject obvious duplicates before the deeper workflow runs. That protects the database from unnecessary writes and keeps the UI response shape stable.
 - `LicenseService.create_complete_license()` exists because the write is multi-entity. It must validate rules, resolve or create a company, resolve or create a vehicle, create a route, add an optional hazmat row, create the license row, and write the audit log in order. If this orchestration were split across callers, the app would be much easier to break.

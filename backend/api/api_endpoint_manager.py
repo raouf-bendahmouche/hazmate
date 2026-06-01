@@ -19,10 +19,8 @@ from contextlib import asynccontextmanager
 import uvicorn
 
 from database.connection_handler import Database
-from backend.notifications.license_expiry_scheduler import LicenseScheduler
 from services.statistics_service import StatisticsService
 from services.license_service import LicenseService
-from services.background_job_manager import BackgroundJobManager
 from services.auth_service import AuthService
 from backend.api.auth_router import create_auth_router
 
@@ -35,23 +33,14 @@ async def lifespan(app: FastAPI):
     """
     Handle application startup and shutdown events gracefully.
     This replaces the deprecated @app.on_event handlers.
-    
-    CRITICAL: Lifespan events ensure background tasks are properly started and stopped
-    with the API lifecycle. Without explicit management, the scheduler thread and backup
-    manager would continue running after API shutdown, causing resource leaks.
-    If removed, compliance monitoring and backup reliability are lost.
     """
     # Startup Logic
     auth_service.ensure_default_admin()
-    scheduler.start()
-    await bg_manager.start()
     print("Application lifespan started.")
     
     yield
     
     # Shutdown Logic
-    scheduler.stop()
-    await bg_manager.stop()
     print("Application lifespan ended.")
 
 # Initialize FastAPI application with lifespan
@@ -93,17 +82,15 @@ app.add_middleware(
 )
 
 db = Database()
-scheduler = LicenseScheduler(db)
 stats_service = StatisticsService()
 license_service = LicenseService(db)
-bg_manager = BackgroundJobManager(db)
 auth_service = AuthService(db)
 
 # Register the authentication router
 app.include_router(create_auth_router(auth_service))
 
 
-def _extract_token_from_header(authorization: Optional[str]) -> Optional[str]:
+def _extract_token_from_header(authorization: str | None) -> str | None:
     if not authorization:
         return None
     if authorization.lower().startswith("bearer "):
@@ -111,7 +98,7 @@ def _extract_token_from_header(authorization: Optional[str]) -> Optional[str]:
     return None
 
 
-def _require_auth(authorization: Optional[str]):
+def _require_auth(authorization: str | None):
     token = _extract_token_from_header(authorization)
     username = auth_service.validate_token(token) if token else None
     if not username:
@@ -149,14 +136,12 @@ def _is_letters_only(value):
 # ==============================================================================
 
 class LicenseCreate(BaseModel):
-    # The Pydantic BaseModel enforces rigorous type validation
-    # preventing bad data from hitting the database engine.
-    # This is the first hard validation boundary before any business logic runs, so
-    # malformed requests fail early and predictably instead of causing partial writes.
     company_name: str
-    vehicle_reg: str
+    vehicle_reg: Optional[str] = ""
     record_number: str
     license_number: Optional[str] = ""
+    driver_name: Optional[str] = ""
+    driver_phone: Optional[str] = ""
     company_reg: Optional[str] = ""
     company_address: Optional[str] = ""
     carrier_type: Optional[str] = "Public"
@@ -170,20 +155,24 @@ class LicenseCreate(BaseModel):
     signature_date: Optional[str] = ""
     expiration_date: Optional[str] = ""
     activity_location: Optional[str] = ""
-    contract_type: Optional[str] = ""
+    registration_number: str
     deletion_days: Optional[int] = None
-    vehicle_type_category: Optional[str] = ""
-    route: Optional[str] = ""
+    vehicles_list: Optional[str] = ""
+    drivers_list: Optional[str] = ""
 
 class LicenseUpdate(BaseModel):
+    driver_name: Optional[str] = None
+    driver_phone: Optional[str] = None
     license_number: Optional[str] = None
     record_number: Optional[str] = None
     signature_date: Optional[str] = None
     expiration_date: Optional[str] = None
     status: Optional[str] = None
     activity_location: Optional[str] = None
-    contract_type: Optional[str] = None
+    registration_number: Optional[str] = None
     deletion_days: Optional[int] = None
+    vehicles_list: Optional[str] = None
+    drivers_list: Optional[str] = None
 
 
 # ── Health ──────────────────────────────────────────────────────────────────
@@ -227,7 +216,6 @@ async def list_licenses(
     status: Optional[str] = None,
     carrier: Optional[str] = None,
     activity_location: Optional[str] = None,
-    contract_type: Optional[str] = None,
     sort_by: str = "created_at",
     sort_dir: str = "DESC",
     page: int = 1,
@@ -245,7 +233,6 @@ async def list_licenses(
         status_filter=status,
         carrier_type_filter=carrier,
         activity_location=activity_location,
-        contract_type=contract_type,
         sort_by=sort_by,
         sort_dir=sort_dir,
         page=page_num,
@@ -255,9 +242,8 @@ async def list_licenses(
 
 
 @app.post("/api/licenses/{license_id}/renew")
-async def renew_license(license_id: int, request: Request, authorization: Optional[str] = Header(None)):
+async def renew_license(license_id: int, request: Request):
     """Renew an expired license. Accepts either `extend_days` (int) or `new_expiration_date` (YYYY-MM-DD)."""
-    _require_auth(authorization)
     d = await request.json()
     extend_days = d.get("extend_days")
     new_date = d.get("new_expiration_date")
@@ -290,9 +276,8 @@ async def renew_license(license_id: int, request: Request, authorization: Option
 
 
 @app.post("/api/licenses/{license_id}/suspend")
-async def suspend_license(license_id: int, request: Request, authorization: Optional[str] = Header(None)):
+async def suspend_license(license_id: int, request: Request):
     """Suspend or stop a license. Body: { action: 'suspend'|'stop' }"""
-    _require_auth(authorization)
     d = await request.json()
     action = (d.get("action") or "").strip().lower()
     if action not in ("suspend", "stop"):
@@ -311,7 +296,6 @@ async def list_deleted_licenses(
     search: str = "",
     status: Optional[str] = None,
     activity_location: Optional[str] = None,
-    contract_type: Optional[str] = None,
     page: int = 1,
     limit: int = 50
 ):
@@ -323,46 +307,22 @@ async def list_deleted_licenses(
         search_term=search,
         status_filter=status,
         activity_location=activity_location,
-        contract_type=contract_type,
         page=page_num,
         limit=limit_num,
     )
     return _ok(result)
 
 @app.get("/api/licenses/expiring")
-async def expiring(days: int = 30):
-    """Get licenses expiring within the provided number of days."""
-    return _ok(db.get_expiring_licenses(days))
+async def expiring(start_days: int = 0, end_days: int = 30, limit: Optional[int] = None):
+    """Get licenses expiring within the provided range of days, optionally limited."""
+    return _ok(db.get_expiring_licenses(start_days=start_days, end_days=end_days, limit=limit))
 
 
-@app.get("/api/licenses/check-duplicate")
-async def check_duplicate(
-    record_number: Optional[str] = None,
-    vehicle_reg: Optional[str] = None,
-    exclude_id: Optional[int] = None
-):
-    """
-    Check if a record_number or vehicle_reg already exists in the system.
-    If exclude_id is provided, exclude that license ID from the check.
-    """
-    is_duplicate = False
-    message = ""
-    
-    if record_number:
-        record_number = record_number.strip()
-        existing = db.get_license_by_record_number(record_number)
-        if existing and (exclude_id is None or existing["id"] != exclude_id):
-            is_duplicate = True
-            message = "This registration number is already reserved"
-            
-    if not is_duplicate and vehicle_reg:
-        vehicle_reg = vehicle_reg.strip()
-        existing = db.get_license_by_vehicle_reg(vehicle_reg)
-        if existing and (exclude_id is None or existing["id"] != exclude_id):
-            is_duplicate = True
-            message = "This registration number is already reserved"
-            
-    return _ok({"is_duplicate": is_duplicate, "message": message})
+
+@app.get("/api/licenses/next-record-number")
+async def get_next_record_number():
+    """Returns the next auto-generated record number (max record number + 1)."""
+    return _ok({"next_record_number": license_service.get_next_record_number()})
 
 
 @app.get("/api/licenses/{license_id}")
@@ -373,62 +333,35 @@ async def get_license(license_id: int):
         _err("License not found", 404)
     return _ok(row)
 
-def map_clean_to_legacy_dict(data: dict) -> dict:
-    # Auto-generate license_number if missing
-    if not data.get("license_number") and data.get("record_number"):
-        data["license_number"] = f"LIC-{data['record_number']}"
-        
-    # Split vehicle_type_category if present
-    if data.get("vehicle_type_category"):
-        type_cat = data.pop("vehicle_type_category").strip()
-        parts = type_cat.split(None, 1)
-        data["vehicle_type"] = parts[0]
-        data["vehicle_category"] = parts[1] if len(parts) > 1 else ""
-    elif "vehicle_type_category" in data:
-        data.pop("vehicle_type_category")
-            
-    # Split route if present
-    if data.get("route"):
-        route = data.pop("route").strip()
-        if re.search(r"→|->|-", route):
-            parts = re.split(r"→|->|-", route)
-            data["route_origin"] = parts[0].strip()
-            data["route_dest"] = " - ".join(p.strip() for p in parts[1:]) if len(parts) > 1 else ""
-        else:
-            data["route_origin"] = ""
-            data["route_dest"] = route
-    elif "route" in data:
-        data.pop("route")
-            
-    return data
-
 @app.post("/api/licenses", status_code=201)
-async def create_license(d: LicenseCreate, authorization: Optional[str] = Header(None)):
+async def create_license(d: LicenseCreate):
     """
     Create a complete license entity using the LicenseService.
     All business logic and orchestration is handled in the service layer.
     """
     try:
-        _require_auth(authorization)
-        
-        # Map clean properties to legacy model format
-        data = d.dict()
-        data = map_clean_to_legacy_dict(data)
+        payload = d.dict()
+        # Auto-generate license number if not specified
+        if not payload.get("license_number"):
+            payload["license_number"] = f"LIC-{payload['record_number']}"
 
-        # These duplicate checks stay close to the HTTP boundary because they fail
-        # fast and avoid the cost of building the whole dependency graph for records
-        # we already know are invalid.
-        lic_num = data.get("license_number")
-        rec_num = data.get("record_number")
-        vehicle_reg = data.get("vehicle_reg")
-        if db.get_license_by_number(lic_num):
-            _err(f"License number '{lic_num}' already exists.")
-        if db.get_license_by_record_number(rec_num):
-            _err("This registration number is already reserved")
-        if vehicle_reg and db.get_license_by_vehicle_reg(vehicle_reg):
-            _err("This registration number is already reserved")
+        # Validation for registration_number (numeric and mandatory)
+        reg_num = payload.get("registration_number")
+        if not reg_num:
+            _err("Registration number (رقم القيد) is mandatory.")
+        if not reg_num.isdigit():
+            _err("Registration number (رقم القيد) must be numeric (digits only).")
 
-        lic_id = license_service.create_complete_license(data)
+        # Uniqueness checks
+        if db.get_license_by_number(payload["license_number"]):
+            _err(f"License number '{payload['license_number']}' already exists.")
+        if db.get_license_by_record_number(payload["record_number"]):
+            _err(f"Record number '{payload['record_number']}' already exists.")
+        if db.get_license_by_registration_number(reg_num):
+            _err(f"Registration number '{reg_num}' already exists.")
+
+        lic_id = license_service.create_complete_license(payload)
+        stats_service.clear_cache()
         return _ok({"id": lic_id}, "License created successfully")
     except ValueError as e:
         _err(str(e))
@@ -436,60 +369,64 @@ async def create_license(d: LicenseCreate, authorization: Optional[str] = Header
         _err(f"Unexpected error: {str(e)}", 500)
 
 @app.put("/api/licenses/{license_id}")
-async def update_license(license_id: int, d: LicenseUpdate, authorization: Optional[str] = Header(None)):
+async def update_license(license_id: int, d: LicenseUpdate):
     """Partially update a license.
 
     Only provided fields are passed through, which prevents accidental overwrites of
     untouched columns. That behavior matters because the UI often submits edit forms
     with only a subset of fields.
     """
-    _require_auth(authorization)
     fields = {k: v for k, v in d.dict(exclude_unset=True).items() if v is not None}
     if not fields:
         _err("No updatable fields provided.")
-    
-    # Auto-synchronize internal license_number if record_number (Registration Number) is updated
-    if "record_number" in fields:
-        fields["license_number"] = f"LIC-{fields['record_number']}"
-        rec_num = fields["record_number"]
-        existing = db.get_license_by_record_number(rec_num)
+
+    # Check record_number uniqueness on update
+    new_rec_num = fields.get("record_number")
+    if new_rec_num:
+        existing = db.get_license_by_record_number(new_rec_num)
         if existing and existing["id"] != license_id:
-            _err("This registration number is already reserved")
-        
-    try:
-        license_service.rules.validate_license_update(license_id, fields)
-    except ValueError as e:
-        _err(str(e))
+            _err(f"Record number '{new_rec_num}' already exists.")
+
+    # Check registration_number uniqueness on update
+    new_reg_num = fields.get("registration_number")
+    if new_reg_num:
+        if not new_reg_num.isdigit():
+            _err("Registration number (رقم القيد) must be numeric (digits only).")
+        existing = db.get_license_by_registration_number(new_reg_num)
+        if existing and existing["id"] != license_id:
+            _err(f"Registration number '{new_reg_num}' already exists.")
 
     db.update_license(license_id, **fields)
+    stats_service.clear_cache()
     return _ok(message="License updated")
 
-
 @app.delete("/api/licenses/{license_id}")
-async def delete_license(license_id: int, authorization: Optional[str] = Header(None)):
+async def delete_license(license_id: int):
     """Soft-delete a license contract via service layer.
 
     This endpoint never hard-deletes because the system needs audit history and
     restore support. Removing the service indirection here would make that policy
     much easier to bypass.
     """
-    _require_auth(authorization)
     license_service.soft_delete_license(license_id)
+    stats_service.clear_cache()
     return _ok(message="License deleted (soft)")
 
 @app.post("/api/licenses/{license_id}/restore")
-async def restore_license(license_id: int, authorization: Optional[str] = Header(None)):
+async def restore_license(license_id: int):
     """Restore a soft-deleted contract via service layer with validation.
 
     The service performs the business-rule check before the mutation, so the API
     stays thin while still rejecting invalid restores cleanly.
     """
     try:
-        _require_auth(authorization)
         license_service.restore_license(license_id)
+        stats_service.clear_cache()
         return _ok(message="License restored")
     except ValueError as e:
         _err(str(e))
+
+
 
 
 # ── Companies ───────────────────────────────────────────────────────────────
@@ -501,12 +438,11 @@ async def list_companies():
 
 
 @app.post("/api/companies", status_code=201)
-async def create_company(request: Request, authorization: Optional[str] = Header(None)):
-    """Create a new company. Prevent duplicates by registration number or exact name."""
+async def create_company(request: Request, authorization: str | None = Header(None)):
+    """Create a new company. Prevent duplicates by exact name."""
     _require_auth(authorization)
     d = await request.json()
     name = (d.get("name") or "").strip()
-    reg = (d.get("registration_number") or "").strip()
     address = d.get("address", "")
     carrier_type = d.get("carrier_type", "Public")
     account_type = d.get("account_type", "Public")
@@ -514,19 +450,13 @@ async def create_company(request: Request, authorization: Optional[str] = Header
     if not name:
         _err("Company name is required.")
 
-    # Check by registration first (strong uniqueness)
-    if reg:
-        existing = db.get_company_by_registration(reg)
-        if existing:
-            _err("Company with this registration already exists.")
-
-    # Also check for exact name match to avoid duplicates
+    # Check for exact name match to avoid duplicates
     companies = db.get_companies()
     for c in companies:
         if c.get("name", "").strip().lower() == name.lower():
             _err("Company with this name already exists.")
 
-    new_id = db.add_company(name, reg or None, address, carrier_type, account_type)
+    new_id = db.add_company(name, address, carrier_type, account_type)
     return _ok({"id": new_id}, "Company created")
 
 
@@ -536,6 +466,14 @@ async def create_company(request: Request, authorization: Optional[str] = Header
 async def list_vehicles():
     """List all registered vehicles."""
     return _ok(db.get_vehicles())
+
+
+# ── Drivers ─────────────────────────────────────────────────────────────────
+
+@app.get("/api/drivers")
+async def list_drivers():
+    """List all registered drivers."""
+    return _ok(db.get_drivers())
 
 
 # ── Settings ────────────────────────────────────────────────────────────────
@@ -550,13 +488,12 @@ async def get_settings():
     return _ok(db.get_all_settings())
 
 @app.put("/api/settings")
-async def save_settings(request: Request, authorization: Optional[str] = Header(None)):
+async def save_settings(request: Request):
     """Save application settings from key-value pairs.
 
     Settings are stored individually so the app can persist small configuration
     changes without requiring a dedicated settings table schema migration every time.
     """
-    _require_auth(authorization)
     d = await request.json()
     for key, value in d.items():
         db.set_setting(key, str(value))

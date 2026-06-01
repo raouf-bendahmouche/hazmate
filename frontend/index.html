@@ -46,6 +46,10 @@
     </div>
 
     <div class="sidebar-footer">
+      <div class="nav-item" id="nav-settings" data-page="settings" tabindex="0" role="button">
+        <span class="nav-icon">⚙️</span>
+        <span data-i18n="nav_settings">Settings</span>
+      </div>
     </div>
   </nav>
 
@@ -58,21 +62,6 @@
       <h1 id="page-title" data-i18n="nav_dashboard">Dashboard</h1>
 
       <div class="topbar-actions">
-        <!-- Dark mode toggle -->
-        <button class="icon-btn" id="dark-toggle" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
-
-        <!-- Language selector -->
-        <div class="lang-dropdown">
-          <button class="icon-btn" id="lang-btn" aria-label="Select language" title="Change language">🌐</button>
-          <div class="lang-menu" id="lang-menu" role="menu">
-            <div class="lang-option" data-lang="ar" role="menuitem">🇩🇿 العربية</div>
-            <div class="lang-option" data-lang="fr" role="menuitem">🇫🇷 Français</div>
-            <div class="lang-option" data-lang="en" role="menuitem">🇬🇧 English</div>
-          </div>
-        </div>
-
-        <!-- Logout button -->
-        <button class="icon-btn" id="btn-logout" title="Sign out" aria-label="Sign out" style="font-size:16px;">🚪</button>
       </div>
     </header>
 
@@ -80,7 +69,7 @@
     <main id="content" role="main">
       <div class="empty-state">
         <div class="empty-icon">⏳</div>
-        <h3 data-i18n="loading">Loading…</h3>
+        <h3>Loading…</h3>
       </div>
     </main>
   </div>
@@ -108,7 +97,7 @@
 
 <!-- Edit Modal -->
 <div class="modal-backdrop hidden" id="edit-modal" role="dialog" aria-modal="true">
-  <div class="modal" style="max-width:580px;">
+  <div class="modal" style="max-width:720px;">
     <div class="modal-header">
       <span class="modal-title" id="edit-modal-title">Edit Contract</span>
       <button class="modal-close" id="edit-modal-close" aria-label="Close">✕</button>

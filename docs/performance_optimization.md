@@ -15,7 +15,7 @@ Primary targets:
 The most important optimization is indexing the columns used by search, expiry monitoring, and dashboard analytics.
 
 Key indexes:
-- `licenses(license_number)` for internal exact lookup.
+- `licenses(license_number)` for exact lookup.
 - `licenses(expiration_date)` for expiry scans.
 - `licenses(status)` for active/inactive filters.
 - `licenses(activity_location)` for municipality analysis.
@@ -109,7 +109,7 @@ Do not add complexity that the current runtime profile does not need.
 
 ## Database-Side Optimizations
 
-- Indexed columns for frequent lookups (internal license number, registration number, status, location).
+- Indexed columns for frequent lookups (license number, registration, status, location).
 - WAL mode and busy timeout configured for smoother concurrent reads/writes.
 - Lock retry mechanism in write helper to handle transient SQLite contention.
 

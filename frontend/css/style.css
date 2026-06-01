@@ -422,12 +422,6 @@ select.form-control {
   cursor: pointer;
 }
 
-[dir="rtl"] select.form-control {
-  background-position: left 10px center;
-  padding-right: 12px;
-  padding-left: 30px;
-}
-
 textarea.form-control { resize: vertical; min-height: 70px; }
 
 .form-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
@@ -1038,3 +1032,262 @@ tbody tr:last-child td { border-bottom: none; }
   padding: 4px 8px;
   font-size: 12px;
 }
+
+/* Selected row highlighting in search results */
+tbody tr.clickable-row {
+  cursor: pointer;
+}
+tbody tr.clickable-row.selected-row {
+  background: var(--accent-light) !important;
+}
+[dir="ltr"] tbody tr.clickable-row.selected-row {
+  border-left: 4px solid var(--accent);
+}
+[dir="rtl"] tbody tr.clickable-row.selected-row {
+  border-right: 4px solid var(--accent);
+}
+
+/* ── Action Toolbar (below search card) ──────────────── */
+.action-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+/* ── Vehicle / Driver card tables ────────────────────── */
+.entity-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+.entity-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+}
+.entity-section-header h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.entity-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.entity-table thead tr {
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+}
+.entity-table th {
+  padding: 9px 14px;
+  text-align: start;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  cursor: default;
+}
+.entity-table th:hover { color: var(--text-muted); }
+.entity-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+.entity-table tbody tr:last-child td { border-bottom: none; }
+.entity-table tbody tr:hover { background: var(--bg-hover); }
+
+.entity-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.entity-actions-cell {
+  display: flex;
+  gap: 4px;
+}
+.entity-actions-cell .btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+/* ── Mini Modal (for adding/editing vehicle/driver) ──── */
+.mini-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.45);
+  backdrop-filter: blur(2px);
+  z-index: 9500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn .12s ease;
+}
+.mini-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  width: 90%;
+  max-width: 440px;
+  animation: scaleIn .15s ease;
+}
+.mini-modal-header {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mini-modal-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.mini-modal-body {
+  padding: 18px;
+}
+.mini-modal-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.flex-column { flex-direction: column; }
+
+/* ── Settings Page ───────────────────────────────────── */
+.settings-page {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 20px;
+}
+
+.settings-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: box-shadow var(--transition);
+}
+.settings-card:hover {
+  box-shadow: var(--shadow);
+}
+
+.settings-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-card-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.settings-card-icon {
+  font-size: 20px;
+  width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.settings-card-body {
+  padding: 18px 20px 20px;
+}
+
+.settings-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+
+/* Info rows in Account card */
+.settings-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-info-row:last-child {
+  border-bottom: none;
+}
+.settings-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.settings-value {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Toggle button group */
+.settings-toggle-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settings-toggle-btn {
+  padding: 10px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+  flex: 1;
+  min-width: 110px;
+  text-align: center;
+}
+.settings-toggle-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-light);
+}
+.settings-toggle-btn.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(99,102,241,0.25);
+}
+
+/* Danger card for logout */
+.settings-card-danger {
+  border-color: var(--danger-light);
+}
+.settings-card-danger .settings-card-header {
+  border-bottom-color: var(--danger-light);
+}
+.settings-card-danger .settings-card-header h3 {
+  color: var(--danger);
+}
+

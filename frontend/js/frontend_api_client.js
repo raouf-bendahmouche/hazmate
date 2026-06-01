@@ -73,14 +73,13 @@ const API = {
     Object.fromEntries(Object.entries(params).filter(([,v]) => v !== null && v !== undefined && v !== ""))
   )),
   restoreLicense: (id)      => apiFetch(`/api/licenses/${id}/restore`, { method:"POST" }),
-  expiringLicenses: (d=30) => apiFetch(`/api/licenses/expiring?days=${d}`),
-  checkDuplicate: (params={}) => apiFetch("/api/licenses/check-duplicate?" + new URLSearchParams(
-    Object.fromEntries(Object.entries(params).filter(([,v]) => v !== null && v !== undefined && v !== ""))
-  )),
+  expiringLicenses: (start=0, end=30, limit=null) => apiFetch(`/api/licenses/expiring?start_days=${start}&end_days=${end}` + (limit ? `&limit=${limit}` : '')),
+  nextRecordNumber: ()     => apiFetch("/api/licenses/next-record-number"),
 
   // Companies / Vehicles
   getCompanies: ()         => apiFetch("/api/companies"),
   getVehicles:  ()         => apiFetch("/api/vehicles"),
+  getDrivers:   ()         => apiFetch("/api/drivers"),
 
   // Settings
   getSettings: ()          => apiFetch("/api/settings"),

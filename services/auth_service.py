@@ -53,10 +53,10 @@ class AuthService:
 
         initial_pw = self.db.get_setting("admin_password")
         if not initial_pw:
-            initial_pw = secrets.token_urlsafe(12)
+            initial_pw = "admin"
             self.db.set_setting("admin_password", initial_pw)
             print(
-                f"[AUTH] No admin password configured. Generated initial password: {initial_pw!r}"
+                f"[AUTH] No admin password configured. Defaulting password to: {initial_pw!r}"
             )
 
         hashed = self.hash_password(initial_pw)

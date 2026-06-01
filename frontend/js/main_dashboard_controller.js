@@ -1,12 +1,39 @@
 /**
  * app.js — Main UI Controller
  * Handles routing, themes, language, and core UI events.
+ *
+ * ARCHITECTURAL REFACTORING & DESIGN NOTES (FULL SYSTEM SYNCHRONIZATION):
+ *
+ * 1. Entity Separation (Vehicles / Drivers / Contracts):
+ *    - Vehicles and Drivers are represented as separate first-class entities with dedicated, independent database tables and frontend views.
+ *    - The dedicated Vehicles View displays registration number, type, category, and company association with no contract or driver context.
+ *    - The dedicated Drivers View displays driver name, system-generated ID, optional phone number, and associated company with no license/contract leakage.
+ *
+ * 2. Auto-Increment Driver ID Logic:
+ *    - Drivers use a system-generated, auto-incrementing integer as the primary key. Manual edits are disabled.
+ *
+ * 3. Optional Phone Field:
+ *    - The driver's phone number is optional (nullable in the database and frontend form validation), permitting driver creation without a phone number.
+ *
+ * 4. Expiration Segmentation:
+ *    - Segmented into 30, 60, and 90 day ranges on the dashboard.
+ *    - Previews are fetched with a backend limit parameter of 5 records. A "View Full List" button allows retrieving the complete dataset for each range.
+ *
+ * 5. Purged Background Services:
+ *    - All SMTP configuration forms, test email buttons, and database backup elements have been deleted from the Settings UI.
+ *    - Background job manager modules, schedulers, and background threads have been removed to avoid memory leaks.
+ *
+ * 6. Indexing:
+ *    - B-Tree indexes are preserved on vehicle registration numbers and licensing fields to ensure lightning-fast dashboard and query operations.
  */
 
 const state = {
     currentPath: 'dashboard',
     history: [],
     theme: localStorage.getItem('theme') || 'light',
+    selectedLicenseId: null,
+    communes: [],
+    wilaya: 'Setif'
 };
 
 // ── UI Elements ──────────────────────────────────────────────
@@ -38,49 +65,39 @@ function debounce(func, wait) {
     };
 }
 
-let setifCommunesData = null;
-
-async function fetchCommunes() {
-    if (setifCommunesData) return setifCommunesData;
-    try {
-        const resp = await fetch('./data/setif_communes.json');
-        if (resp.ok) {
-            setifCommunesData = await resp.json();
-            return setifCommunesData;
-        }
-    } catch (e) {
-        console.error("Failed to load communes:", e);
-    }
-    return null;
-}
-
-async function populateCommunesSelect(selectEl, selectedValue = '', isFilter = false) {
-    if (!selectEl) return;
-    const data = await fetchCommunes();
-    if (!data || !data.communes) return;
-
-    selectEl.innerHTML = isFilter 
-        ? `<option value="">${t('opt_all')}</option>`
-        : `<option value="">${t('select_address')}</option>`;
-
-    const sortedCommunes = [...data.communes].sort((a, b) => a.localeCompare(b));
-
-    sortedCommunes.forEach(commune => {
-        const opt = document.createElement('option');
-        const val = isFilter ? commune : `${commune}, ${data.wilaya}`;
-        opt.value = val;
-        opt.textContent = isFilter ? commune : `${commune} (${data.wilaya})`;
-        if (val === selectedValue || (isFilter && val.toLowerCase() === selectedValue.toLowerCase())) {
-            opt.selected = true;
-        }
-        selectEl.appendChild(opt);
-    });
+// Global location select builder (Sorted Alphabetically)
+function buildLocationSelectHTML(name, currentValue = '', id = '') {
+    const idAttr = id ? `id="${id}"` : '';
+    const options = (state.communes || []).map(commune => {
+        const selected = (commune === currentValue || currentValue?.startsWith(commune)) ? 'selected' : '';
+        return `<option value="${commune}" ${selected}>${commune} (${state.wilaya || 'Setif'})</option>`;
+    }).join('');
+    
+    return `
+        <select class="form-control" name="${name}" ${idAttr}>
+            <option value="">${t('opt_all_locations') || '(Select location)'}</option>
+            ${options}
+        </select>
+    `;
 }
 
 // ── Initialization ───────────────────────────────────────────
 
 async function init() {
     await initApiBase();
+    // Load Setif communes
+    try {
+        const resp = await fetch('./data/setif_communes.json');
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data.communes) {
+                state.communes = data.communes.sort((a, b) => a.localeCompare(b));
+                state.wilaya = data.wilaya || 'Setif';
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load communes:", e);
+    }
     applyTheme();
     applyLanguage();
     setupEventListeners();
@@ -98,25 +115,29 @@ function setupEventListeners() {
 
     el.backBtn.addEventListener('click', goBack);
 
-    // Theme toggle
-    el.darkToggle.addEventListener('click', toggleTheme);
+    // Theme toggle (guarded)
+    if (el.darkToggle) {
+        el.darkToggle.addEventListener('click', toggleTheme);
+    }
 
-    // Language
-    el.langBtn.addEventListener('click', () => {
-        el.langMenu.classList.toggle('open');
-    });
+    // Language (guarded)
+    if (el.langBtn) {
+        el.langBtn.addEventListener('click', () => {
+            if (el.langMenu) el.langMenu.classList.toggle('open');
+        });
+    }
 
     document.querySelectorAll('.lang-option').forEach(opt => {
         opt.addEventListener('click', () => {
             const lang = opt.getAttribute('data-lang');
             setLanguage(lang);
-            el.langMenu.classList.remove('open');
+            if (el.langMenu) el.langMenu.classList.remove('open');
         });
     });
 
-    // Close lang menu on click outside
+    // Close lang menu on click outside (guarded)
     document.addEventListener('click', (e) => {
-        if (!el.langBtn.contains(e.target) && !el.langMenu.contains(e.target)) {
+        if (el.langBtn && el.langMenu && !el.langBtn.contains(e.target) && !el.langMenu.contains(e.target)) {
             el.langMenu.classList.remove('open');
         }
     });
@@ -128,6 +149,12 @@ function setupEventListeners() {
             if (cmd === 'search') navigateTo('search');
             if (cmd === 'back') goBack();
         });
+    }
+
+    // Topbar settings shortcut
+    const topbarSettingsBtn = document.getElementById('btn-topbar-settings');
+    if (topbarSettingsBtn) {
+        topbarSettingsBtn.addEventListener('click', () => navigateTo('settings'));
     }
 
     // Refresh on language change
@@ -156,7 +183,7 @@ function navigateTo(path, addToHistory = true) {
     el.pageTitle.textContent = t(`nav_${path.replace('-', '_')}`);
 
     // Show loading spinner immediately
-    el.content.innerHTML = `<div class="loading-overlay"><div class="spinner"></div><p style="margin-top: 10px;">${t('loading') || 'Loading...'}</p></div>`;
+    el.content.innerHTML = '<div class="loading-overlay"><div class="spinner"></div><p style="margin-top: 10px;">Loading...</p></div>';
 
     // Use a timeout to allow the UI to update before starting the heavy work
     setTimeout(() => {
@@ -180,12 +207,21 @@ function navigateTo(path, addToHistory = true) {
                 case 'statistics':
                     renderStatistics();
                     break;
+                case 'settings':
+                    renderSettings();
+                    break;
+                case 'vehicles':
+                    renderVehiclesView();
+                    break;
+                case 'drivers':
+                    renderDriversView();
+                    break;
                 default:
-                    el.content.innerHTML = `<div class="empty-state"><h2>${t('page_not_found') || '404 - Page Not Found'}</h2><p>${t('page_not_exist') || "The requested page does not exist."}</p></div>`;
+                    el.content.innerHTML = `<div class="empty-state"><h2>404 - Page Not Found</h2><p>The requested page '${path}' does not exist.</p></div>`;
             }
         } catch (err) {
             showToast(err.message, 'error');
-            el.content.innerHTML = `<div class="empty-state"><h2>${t('toast_error')}</h2><p>${translateError(err.message)}</p></div>`;
+            el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
         }
     }, 50); // A small delay to ensure the spinner renders
 }
@@ -198,7 +234,7 @@ function goBack() {
 }
 
 function renderCurrentPage() {
-    el.content.innerHTML = `<div class="loading-overlay"><div class="spinner"></div><p style="margin-top: 10px;">${t('loading') || 'Loading...'}</p></div>`;
+    el.content.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
     
     switch(state.currentPath) {
         case 'welcome':
@@ -219,8 +255,17 @@ function renderCurrentPage() {
         case 'statistics':
             renderStatistics();
             break;
+        case 'settings':
+            renderSettings();
+            break;
+        case 'vehicles':
+            renderVehiclesView();
+            break;
+        case 'drivers':
+            renderDriversView();
+            break;
         default:
-            el.content.innerHTML = `<h2>${t('page_not_found') || 'Page not found'}</h2>`;
+            el.content.innerHTML = `<h2>Page ${state.currentPath} not found</h2>`;
     }
 }
 
@@ -234,7 +279,9 @@ function toggleTheme() {
 
 function applyTheme() {
     document.documentElement.setAttribute('data-theme', state.theme);
-    el.darkToggle.textContent = state.theme === 'light' ? '🌙' : '☀️';
+    if (el.darkToggle) {
+        el.darkToggle.textContent = state.theme === 'light' ? '🌙' : '☀️';
+    }
 }
 
 // ── Toasts ───────────────────────────────────────────────────
@@ -249,7 +296,7 @@ function showToast(message, type = 'success') {
         <div class="toast-icon">${icons[type]}</div>
         <div class="toast-body">
             <div class="toast-title">${t('toast_' + type)}</div>
-            <div class="toast-msg">${translateError(message)}</div>
+            <div class="toast-msg">${message}</div>
         </div>
     `;
     
@@ -285,44 +332,66 @@ function confirmAction(title, message, onConfirm) {
 
 // ── Dashboard Rendering ──────────────────────────────────────
 
+async function loadExpirySegment(days, isPreview = true) {
+    const container = document.getElementById('expiry-table-container');
+    if (!container) return;
+    
+    container.innerHTML = '<div class="text-center py-16"><div class="spinner"></div></div>';
+    
+    try {
+        const data = await API.expiringLicenses(0, days, isPreview ? 5 : null);
+        
+        if (data.length > 0) {
+            container.innerHTML = `
+                <div class="table-wrapper">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>${t('col_license')}</th>
+                                <th>${t('col_driver')}</th>
+                                <th>${t('col_vehicle')}</th>
+                                <th>${t('col_company')}</th>
+                                <th>${t('col_expiry')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.map(ex => `
+                                <tr>
+                                    <td><strong>${ex.license_number}</strong></td>
+                                    <td>${ex.driver_name || '-'}</td>
+                                    <td>${ex.vehicle_reg || '-'}</td>
+                                    <td>${ex.company_name || '-'}</td>
+                                    <td><span class="badge badge-amber">${ex.expiration_date}</span></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                ${isPreview ? `
+                    <div class="d-flex justify-end mt-16">
+                        <button class="btn btn-ghost" id="btn-load-full-expiry">${t('btn_view_full')}</button>
+                    </div>
+                ` : ''}
+            `;
+            
+            if (isPreview) {
+                const btn = document.getElementById('btn-load-full-expiry');
+                if (btn) {
+                    btn.onclick = () => loadExpirySegment(days, false);
+                }
+            }
+        } else {
+            container.innerHTML = `<div class="empty-state"><p>${t('no_expiring')}</p></div>`;
+        }
+    } catch (err) {
+        showToast(err.message, 'error');
+        container.innerHTML = `<div class="empty-state"><p>${err.message}</p></div>`;
+    }
+}
+
 async function renderDashboard() {
     try {
         const stats = await API.stats();
-        const expiring = await API.expiringLicenses(30);
-
-        let expiringHtml = '';
-        if (expiring.length > 0) {
-            expiringHtml = `
-                <div class="alert-strip warning">
-                    <span>⚠️ ${t('expiring_soon_title')} (${expiring.length})</span>
-                </div>
-                <div class="card mb-16">
-                    <div class="card-body">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>${t('col_record')}</th>
-                                    <th>${t('company_name')}</th>
-                                    <th>${t('col_expiry')}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${expiring.map(ex => `
-                                    <tr>
-                                        <td>${ex.record_number}</td>
-                                        <td>${ex.company_name}</td>
-                                        <td><span class="badge badge-amber">${ex.expiration_date}</span></td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
-        } else {
-            expiringHtml = `<div class="empty-state"><p>${t('no_expiring')}</p></div>`;
-        }
-
         const advStats = await API.statsAdvanced();
         const forecast = advStats.activity?.forecast || [];
 
@@ -331,71 +400,136 @@ async function renderDashboard() {
                 <div class="card-header"><h3 class="card-title">🔮 ${t('predictive_insights') || 'Predictive Insights: Expiry Forecast'}</h3></div>
                 <div class="card-body">
                     <div class="stats-grid">
-                        ${forecast.map(f => {
-                            const num = f.label.split(' ')[0];
-                            let daysStr = t('days') || 'days';
-                            if (currentLang === 'ar') daysStr = 'يوم';
-                            else if (currentLang === 'fr') daysStr = 'jours';
-                            const localizedLabel = t('expiring_in') + ' ' + num + ' ' + daysStr;
+                        ${forecast.map((f, idx) => {
+                            const days = (idx + 1) * 30;
                             return `
-                                <div class="stat-card" style="border-left: 4px solid var(--warning)">
+                                <div class="stat-card clickable-forecast-card" data-days="${days}" style="border-left: 4px solid var(--warning); cursor: pointer;">
+                                    <div class="stat-icon yellow">🔮</div>
                                     <div class="stat-info">
                                         <div class="stat-value">${f.count}</div>
-                                        <div class="stat-label">${localizedLabel}</div>
+                                        <div class="stat-label">${t('expiring_' + days)}</div>
                                     </div>
                                 </div>
                             `;
                         }).join('')}
                     </div>
-                    <p class="text-muted mt-8 text-sm">${t('expiring_in_forecast_label')}</p>
+                    <p class="text-muted mt-8 text-sm">Automated forecast based on current active contracts and their respective expiration dates.</p>
                 </div>
             </div>
         `;
 
         el.content.innerHTML = `
             <div class="stats-grid mb-24">
-                <div class="stat-card" id="card-active-contracts" style="border-top: 4px solid var(--accent); cursor: pointer;">
+                <div class="stat-card" id="card-active-licenses" style="border-top: 4px solid var(--accent); cursor: pointer;">
                     <div class="stat-icon purple">📄</div>
                     <div class="stat-info">
                         <div class="stat-value">${stats.active_licenses}</div>
                         <div class="stat-label">${t('stat_active')}</div>
                     </div>
                 </div>
-                <div class="stat-card" id="card-expired-contracts" style="border-top: 4px solid var(--danger); cursor: pointer;">
+                <div class="stat-card" id="card-expired-licenses" style="border-top: 4px solid var(--danger); cursor: pointer;">
                     <div class="stat-icon red">⏰</div>
                     <div class="stat-info">
                         <div class="stat-value">${stats.expired_licenses}</div>
                         <div class="stat-label">${t('stat_expired')}</div>
                     </div>
                 </div>
-                <div class="stat-card" id="card-total-contracts" style="border-top: 4px solid var(--success); cursor: pointer;">
-                    <div class="stat-icon green">📋</div>
+                <div class="stat-card" id="card-total-vehicles" style="border-top: 4px solid var(--info); cursor: pointer;">
+                    <div class="stat-icon blue">🚚</div>
                     <div class="stat-info">
-                        <div class="stat-value">${stats.total_contracts}</div>
-                        <div class="stat-label">${t('stat_total_contracts')}</div>
+                        <div class="stat-value">${stats.total_vehicles}</div>
+                        <div class="stat-label">${t('stat_vehicles')}</div>
+                    </div>
+                </div>
+                <div class="stat-card" id="card-total-drivers" style="border-top: 4px solid var(--success); cursor: pointer;">
+                    <div class="stat-icon green">👤</div>
+                    <div class="stat-info">
+                        <div class="stat-value">${stats.total_drivers}</div>
+                        <div class="stat-label">${t('stat_drivers')}</div>
                     </div>
                 </div>
             </div>
             
-            <h2 class="mb-16">🛡️ ${t('expiring_soon_title')}</h2>
-            ${expiringHtml}
+            <div class="card mb-24">
+                <div class="card-header d-flex justify-between align-center" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3 class="card-title">🛡️ ${t('expiring_preview_title')}</h3>
+                    <div class="activity-tabs" id="expiry-tabs">
+                        <button class="activity-tab active" data-days="30">${t('expiring_30')}</button>
+                        <button class="activity-tab" data-days="60">${t('expiring_60')}</button>
+                        <button class="activity-tab" data-days="90">${t('expiring_90')}</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="expiry-table-container">
+                        <div class="text-center py-16"><div class="spinner"></div></div>
+                    </div>
+                </div>
+            </div>
 
             <h2 class="mb-16 mt-24">📈 ${t('system_forecasting') || 'System Forecasting'}</h2>
             ${forecastHtml}
         `;
 
-        document.getElementById('card-active-contracts').onclick = () => {
-            searchParams.status = 'active';
-            navigateTo('search');
-        };
-        document.getElementById('card-expired-contracts').onclick = () => {
-            searchParams.status = 'expired';
-            navigateTo('search');
-        };
-        document.getElementById('card-total-contracts').onclick = () => {
-            searchParams.status = '';
-            navigateTo('search');
-        };
+        const tabs = document.querySelectorAll('#expiry-tabs button');
+        tabs.forEach(btn => {
+            btn.onclick = () => {
+                tabs.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                const days = parseInt(btn.dataset.days, 10);
+                loadExpirySegment(days, true);
+            };
+        });
+
+        const cardActive = document.getElementById('card-active-licenses');
+        const cardExpired = document.getElementById('card-expired-licenses');
+        const cardVehicles = document.getElementById('card-total-vehicles');
+        const cardDrivers = document.getElementById('card-total-drivers');
+
+        if (cardActive) {
+            cardActive.onclick = () => {
+                searchParams.status = 'active';
+                searchParams.search = '';
+                searchParams.activity_location = '';
+                searchParams.carrier = '';
+                searchParams.page = 1;
+                navigateTo('search');
+            };
+        }
+        if (cardExpired) {
+            cardExpired.onclick = () => {
+                searchParams.status = 'expired';
+                searchParams.search = '';
+                searchParams.activity_location = '';
+                searchParams.carrier = '';
+                searchParams.page = 1;
+                navigateTo('search');
+            };
+        }
+        if (cardVehicles) {
+            cardVehicles.onclick = () => {
+                navigateTo('vehicles');
+            };
+        }
+        if (cardDrivers) {
+            cardDrivers.onclick = () => {
+                navigateTo('drivers');
+            };
+        }
+
+        document.querySelectorAll('.clickable-forecast-card').forEach(card => {
+            card.onclick = () => {
+                const days = card.dataset.days;
+                const tab = document.querySelector(`#expiry-tabs button[data-days="${days}"]`);
+                if (tab) {
+                    tabs.forEach(b => b.classList.remove('active'));
+                    tab.classList.add('active');
+                    loadExpirySegment(parseInt(days, 10), true);
+                    tab.scrollIntoView({ behavior: 'smooth' });
+                }
+            };
+        });
+
+        await loadExpirySegment(30, true);
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -405,95 +539,188 @@ async function renderDashboard() {
 
 async function renderSettings() {
     try {
-        const settings = await API.getSettings();
-        
-        el.content.innerHTML = `
-            <div class="card">
-                <div class="card-header"><h2 class="card-title">${t('nav_settings')}</h2></div>
-                <div class="card-body">
-                    <form id="settings-form">
-                        <div class="section-title">${t('sect_smtp')}</div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>${t('smtp_server')}</label>
-                                <input type="text" class="form-control" name="smtp_server" value="${settings.smtp_server || ''}">
-                            </div>
-                            <div class="form-group">
-                                <label>${t('smtp_port')}</label>
-                                <input type="number" class="form-control" name="smtp_port" value="${settings.smtp_port || '587'}">
-                            </div>
-                        </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>${t('smtp_email')}</label>
-                                <input type="email" class="form-control" name="smtp_email" value="${settings.smtp_email || ''}">
-                            </div>
-                            <div class="form-group">
-                                <label>${t('smtp_password')}</label>
-                                <input type="password" class="form-control" name="smtp_password" value="${settings.smtp_password || ''}">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>${t('smtp_recipient')}</label>
-                            <input type="email" class="form-control" name="smtp_recipient" value="${settings.smtp_recipient || ''}">
-                        </div>
-                        
-                        <div class="section-title">${t('sect_backup')}</div>
-                        <div class="form-group">
-                            <label>${t('backup_folder')}</label>
-                            <input type="text" class="form-control" name="backup_folder" value="${settings.backup_folder || ''}" readonly>
-                        </div>
+        const currentLang = localStorage.getItem('lang') || 'ar';
+        const currentTheme = state.theme || 'light';
+        const username = sessionStorage.getItem('auth_user') || 'admin';
 
-                        <div class="mt-16 d-flex gap-8">
-                            <button type="submit" class="btn btn-primary">${t('btn_save_settings')}</button>
-                            <button type="button" class="btn btn-ghost" id="test-email-btn">${t('btn_test_email')}</button>
+        el.content.innerHTML = `
+        <div class="settings-page">
+            <div class="settings-grid">
+
+                <!-- Account Info -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon">👤</span>
+                        <h3>${t('settings_account')}</h3>
+                    </div>
+                    <div class="settings-card-body">
+                        <div class="settings-info-row">
+                            <span class="settings-label">${t('settings_username')}</span>
+                            <span class="settings-value">${username}</span>
                         </div>
-                    </form>
-                    <hr/>
-                    <form id="change-password-form" class="mt-12">
-                        <div class="section-title">${t('change_password')}</div>
-                        <div class="form-group">
-                            <label>${t('lbl_username')}</label>
-                            <input type="text" class="form-control" name="username" value="${sessionStorage.getItem('auth_user')||''}">
+                        <div class="settings-info-row">
+                            <span class="settings-label">${t('settings_role')}</span>
+                            <span class="settings-value badge badge-green" style="font-size:12px; padding:2px 10px;">Admin</span>
                         </div>
-                        <div class="form-group">
-                            <label>${t('lbl_current_password')}</label>
-                            <input type="password" class="form-control" name="current_password">
+                        <div class="settings-info-row">
+                            <span class="settings-label">${t('settings_app_version')}</span>
+                            <span class="settings-value">v2.0</span>
                         </div>
-                        <div class="form-group">
-                            <label>${t('lbl_new_password')}</label>
-                            <input type="password" class="form-control" name="new_password">
-                        </div>
-                        <div class="mt-8">
-                            <button type="submit" class="btn btn-secondary">${t('btn_change_password')||'Change Password'}</button>
-                        </div>
-                    </form>
+                    </div>
                 </div>
+
+                <!-- Change Password -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon">🔑</span>
+                        <h3>${t('settings_change_password')}</h3>
+                    </div>
+                    <div class="settings-card-body">
+                        <form id="change-pw-form" autocomplete="off">
+                            <div class="form-group">
+                                <label>${t('settings_current_password')}</label>
+                                <input type="password" class="form-control" id="pw-current" required>
+                            </div>
+                            <div class="form-group">
+                                <label>${t('settings_new_password')}</label>
+                                <input type="password" class="form-control" id="pw-new" required minlength="6">
+                            </div>
+                            <div class="form-group">
+                                <label>${t('settings_confirm_password')}</label>
+                                <input type="password" class="form-control" id="pw-confirm" required>
+                            </div>
+                            <div class="field-error" id="pw-error"></div>
+                            <button type="submit" class="btn btn-primary mt-8" id="pw-save-btn">${t('settings_save_password')}</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Theme -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon">🎨</span>
+                        <h3>${t('settings_theme')}</h3>
+                    </div>
+                    <div class="settings-card-body">
+                        <p class="settings-desc">${t('settings_theme_desc')}</p>
+                        <div class="settings-toggle-group">
+                            <button class="settings-toggle-btn ${currentTheme === 'light' ? 'active' : ''}" data-theme-val="light">
+                                ☀️ ${t('settings_theme_light')}
+                            </button>
+                            <button class="settings-toggle-btn ${currentTheme === 'dark' ? 'active' : ''}" data-theme-val="dark">
+                                🌙 ${t('settings_theme_dark')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Language -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon">🌐</span>
+                        <h3>${t('settings_language')}</h3>
+                    </div>
+                    <div class="settings-card-body">
+                        <p class="settings-desc">${t('settings_language_desc')}</p>
+                        <div class="settings-toggle-group settings-lang-group">
+                            <button class="settings-toggle-btn ${currentLang === 'ar' ? 'active' : ''}" data-lang-val="ar">
+                                🇩🇿 العربية
+                            </button>
+                            <button class="settings-toggle-btn ${currentLang === 'fr' ? 'active' : ''}" data-lang-val="fr">
+                                🇫🇷 Français
+                            </button>
+                            <button class="settings-toggle-btn ${currentLang === 'en' ? 'active' : ''}" data-lang-val="en">
+                                🇬🇧 English
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Logout -->
+                <div class="settings-card settings-card-danger">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon">🚪</span>
+                        <h3>${t('settings_logout')}</h3>
+                    </div>
+                    <div class="settings-card-body">
+                        <p class="settings-desc">${t('settings_logout_desc')}</p>
+                        <button class="btn btn-danger" id="settings-logout-btn">🚪 ${t('settings_logout_btn') || 'Logout'}</button>
+                    </div>
+                </div>
+
             </div>
+        </div>
         `;
 
-        document.getElementById('settings-form').onsubmit = async (e) => {
+        // ── Change Password Handler ──
+        document.getElementById('change-pw-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData.entries());
+            const errEl = document.getElementById('pw-error');
+            errEl.textContent = '';
+
+            const currentPw = document.getElementById('pw-current').value;
+            const newPw = document.getElementById('pw-new').value;
+            const confirmPw = document.getElementById('pw-confirm').value;
+
+            if (newPw.length < 6) {
+                errEl.textContent = t('settings_pw_min_length');
+                return;
+            }
+            if (newPw !== confirmPw) {
+                errEl.textContent = t('settings_pw_mismatch');
+                return;
+            }
+
+            const saveBtn = document.getElementById('pw-save-btn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = t('btn_saving') || 'Saving...';
+
             try {
-                await API.saveSettings(data);
-                showToast(t('settings_saved'), 'success');
+                await API.changePassword(username, currentPw, newPw);
+                showToast(t('settings_pw_success'), 'success');
+                document.getElementById('change-pw-form').reset();
             } catch (err) {
+                errEl.textContent = err.message;
                 showToast(err.message, 'error');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = t('settings_save_password');
             }
-        };
-        document.getElementById('change-password-form').onsubmit = async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            const data = Object.fromEntries(formData.entries());
+        });
+
+        // ── Theme Toggle ──
+        document.querySelectorAll('[data-theme-val]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                state.theme = btn.dataset.themeVal;
+                localStorage.setItem('theme', state.theme);
+                applyTheme();
+                document.querySelectorAll('[data-theme-val]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
+        // ── Language Selector ──
+        document.querySelectorAll('[data-lang-val]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                setLanguage(btn.dataset.langVal);
+            });
+        });
+
+        // ── Logout ──
+        document.getElementById('settings-logout-btn').addEventListener('click', async () => {
             try {
-                await API.changePassword(data.username, data.current_password, data.new_password);
-                showToast(t('password_changed'), 'success');
-            } catch (err) {
-                showToast(err.message || t('password_change_failed'), 'error');
-            }
-        };
+                const token = sessionStorage.getItem('auth_token');
+                if (token) {
+                    await fetch((window._API_BASE || API_BASE) + '/auth/logout', {
+                        method: 'POST',
+                        headers: { Authorization: 'Bearer ' + token }
+                    });
+                }
+            } catch (_) { /* best-effort */ }
+            sessionStorage.clear();
+            window.location.replace('pages/login.html');
+        });
+
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -501,8 +728,8 @@ async function renderSettings() {
 
 // ── Search Page ──────────────────────────────────────────────
 
-let searchParams = { page: 1, limit: 50, search: '', status: '', carrier: '', activity_location: '', contract_type: '', sort_by: 'signature_date', sort_dir: 'DESC' };
-let deletedSearchParams = { page: 1, limit: 50, search: '', status: '', activity_location: '', contract_type: '', sort_by: 'signature_date', sort_dir: 'DESC' };
+let searchParams = { page: 1, limit: 50, search: '', status: '', carrier: '', activity_location: '' };
+let deletedSearchParams = { page: 1, limit: 50, search: '', status: '', activity_location: '', contract_type: '' };
 
 async function renderSearch() {
     el.content.innerHTML = `
@@ -522,27 +749,16 @@ async function renderSearch() {
                         </select>
                     </div>
                     <div style="width: 150px">
-                        <label>${t('lbl_location')}</label>
-                        <select class="form-control" id="filter-location">
-                            <!-- Populated dynamically -->
-                        </select>
-                    </div>
-                    <div style="width: 150px">
-                        <label>${t('lbl_ctype')}</label>
-                        <select class="form-control" id="filter-ctype">
+                        <label>${t('carrier_type') || 'Carrier Type'}</label>
+                        <select class="form-control" id="filter-carrier">
                             <option value="">${t('opt_all')}</option>
-                            <option value="Public" ${searchParams.contract_type === 'Public' ? 'selected' : ''}>${t('opt_public')}</option>
-                            <option value="Private" ${searchParams.contract_type === 'Private' ? 'selected' : ''}>${t('opt_private')}</option>
+                            <option value="Public" ${searchParams.carrier === 'Public' ? 'selected' : ''}>${t('opt_public') || 'Public'}</option>
+                            <option value="Private" ${searchParams.carrier === 'Private' ? 'selected' : ''}>${t('opt_private') || 'Private'}</option>
                         </select>
                     </div>
-                    <div style="width: 150px">
-                        <label>${t('lbl_sort')}</label>
-                        <select class="form-control" id="filter-sort">
-                            <option value="signature_date|ASC" ${searchParams.sort_by === 'signature_date' && searchParams.sort_dir === 'ASC' ? 'selected' : ''}>${t('sort_oldest')}</option>
-                            <option value="signature_date|DESC" ${searchParams.sort_by === 'signature_date' && searchParams.sort_dir === 'DESC' ? 'selected' : ''}>${t('sort_newest')}</option>
-                            <option value="company_name|ASC" ${searchParams.sort_by === 'company_name' && searchParams.sort_dir === 'ASC' ? 'selected' : ''}>${t('sort_alpha_asc')}</option>
-                            <option value="company_name|DESC" ${searchParams.sort_by === 'company_name' && searchParams.sort_dir === 'DESC' ? 'selected' : ''}>${t('sort_alpha_desc')}</option>
-                        </select>
+                    <div style="width: 180px">
+                        <label>${t('lbl_location')}</label>
+                        ${buildLocationSelectHTML('filter-location', searchParams.activity_location, 'filter-location')}
                     </div>
                     <div class="d-flex align-center gap-8 mt-16">
                         <button class="btn btn-primary" id="btn-search">${t('btn_search')}</button>
@@ -552,65 +768,68 @@ async function renderSearch() {
             </div>
         </div>
 
+        <div class="action-toolbar">
+            <button class="btn btn-success" id="btn-add-contract">➕ ${t('btn_add_contract')}</button>
+            <button class="btn btn-primary" id="btn-edit-contract">✏️ ${t('btn_edit_selected_contract')}</button>
+        </div>
+
         <div class="table-wrapper card">
             <table id="results-table">
                 <thead>
                     <tr>
                         <th>${t('col_record')}</th>
-                        <th>${t('signing_date')}</th>
-                        <th>${t('company_carrier_name')}</th>
-                        <th>${t('registration_code')}</th>
-                        <th>${t('company_address')}</th>
-                        <th>${t('vehicle_registration_number')}</th>
-                        <th>${t('vehicle_type_category')}</th>
-                        <th>${t('route')}</th>
-                        <th>${t('license_expiry_date')}</th>
-                        <th>${t('carrier_type')}</th>
-                        <th>${t('transported_materials')}</th>
+                        <th>${t('col_license')}</th>
+                        <th>${t('col_driver')}</th>
+                        <th>${t('col_vehicle')}</th>
+                        <th>${t('col_company')}</th>
+                        <th>${t('col_location')}</th>
+                        <th>${t('col_expiry')}</th>
                         <th>${t('col_status')}</th>
                         <th>${t('col_actions')}</th>
                     </tr>
                 </thead>
                 <tbody id="results-body">
-                    <tr><td colspan="13" class="text-center"><div class="spinner"></div></td></tr>
+                    <tr><td colspan="9" class="text-center"><div class="spinner"></div></td></tr>
                 </tbody>
             </table>
         </div>
         <div id="pagination" class="pagination"></div>
     `;
 
-    const filterLocation = document.getElementById('filter-location');
-    await populateCommunesSelect(filterLocation, searchParams.activity_location, true);
-
     const searchInput = document.getElementById('search-input');
     const filterStatus = document.getElementById('filter-status');
-    const filterCtype = document.getElementById('filter-ctype');
-    const filterSort = document.getElementById('filter-sort');
+    const filterLocation = document.getElementById('filter-location');
+    const filterCarrier = document.getElementById('filter-carrier');
 
-    const triggerSearch = () => {
+    const triggerSearch = debounce(() => {
         searchParams.search = searchInput.value;
         searchParams.status = filterStatus.value;
         searchParams.activity_location = filterLocation.value;
-        searchParams.contract_type = filterCtype.value;
-        
-        const [sort_by, sort_dir] = filterSort.value.split('|');
-        searchParams.sort_by = sort_by;
-        searchParams.sort_dir = sort_dir;
-        
+        searchParams.carrier = filterCarrier.value;
         searchParams.page = 1;
         loadSearchResults();
-    };
+    }, 400);
 
-    searchInput.oninput = debounce(triggerSearch, 250);
+    searchInput.oninput = triggerSearch;
     filterStatus.onchange = triggerSearch;
     filterLocation.onchange = triggerSearch;
-    filterCtype.onchange = triggerSearch;
-    filterSort.onchange = triggerSearch;
+    filterCarrier.onchange = triggerSearch;
 
     document.getElementById('btn-search').onclick = triggerSearch;
 
+    document.getElementById('btn-add-contract').onclick = () => navigateTo('add-contract');
+
+    document.getElementById('btn-edit-contract').onclick = () => {
+        if (state.selectedLicenseId) {
+            openEditModal(state.selectedLicenseId);
+        } else {
+            showToast(t('select_contract_first'), 'warning');
+        }
+    };
+
     document.getElementById('btn-reset').onclick = () => {
-        searchParams = { page: 1, limit: 50, search: '', status: '', carrier: '', activity_location: '', contract_type: '', sort_by: 'signature_date', sort_dir: 'DESC' };
+        searchParams = { page: 1, limit: 50, search: '', status: '', carrier: '', activity_location: '' };
+        state.selectedLicenseId = null;
         renderSearch();
     };
 
@@ -627,12 +846,12 @@ async function loadSearchResults() {
         if (result.records.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="13">
+                    <td colspan="9">
                         <div class="empty-state">
-                            <div class="empty-icon">🔍</div>
-                            <h3>${t('no_results_found')}</h3>
-                            <p>${t('try_adjust_filter')}</p>
-                            <button class="btn btn-primary mt-16" onclick="navigateTo('add-contract')">${t('btn_add_new')}</button>
+                            <div class="empty-icon">📂</div>
+                            <h3>${t('no_records') || 'No records found'}</h3>
+                            <p>${t('try_adjust_filter') || 'Try adjusting your filters or search terms'}</p>
+                            <button class="btn btn-primary mt-16" onclick="navigateTo('add-contract')">${t('btn_add_new') || 'Add New Contract'}</button>
                         </div>
                     </td>
                 </tr>
@@ -642,18 +861,14 @@ async function loadSearchResults() {
         }
 
         tbody.innerHTML = result.records.map(r => `
-            <tr>
+            <tr class="clickable-row ${state.selectedLicenseId == r.id ? 'selected-row' : ''}" data-id="${r.id}">
                 <td>${r.record_number}</td>
-                <td>${r.signature_date || '-'}</td>
-                <td>${r.company_name}</td>
-                <td>${r.company_reg || '-'}</td>
-                <td>${r.company_address || '-'}</td>
+                <td>${r.license_number}</td>
+                <td>${r.driver_name}</td>
                 <td>${r.vehicle_reg}</td>
-                <td>${r.vehicle_type || ''} ${r.vehicle_category || ''}</td>
-                <td>${r.route_dest || ''}</td>
+                <td>${r.company_name}</td>
+                <td>${r.activity_location || '-'}</td>
                 <td>${r.expiration_date}</td>
-                <td>${t('opt_' + r.carrier_type.toLowerCase()) || r.carrier_type}</td>
-                <td>${r.hazmat_type || '-'}</td>
                 <td><span class="badge ${r.status === 'active' ? 'badge-green' : 'badge-red'}">${t('opt_' + r.status)}</span></td>
                 <td>
                     <div class="d-flex gap-8">
@@ -664,9 +879,22 @@ async function loadSearchResults() {
             </tr>
         `).join('');
 
+        // Row selection click handler
+        tbody.querySelectorAll('tr.clickable-row').forEach(row => {
+            row.onclick = (e) => {
+                if (e.target.closest('button')) return;
+                tbody.querySelectorAll('tr.clickable-row').forEach(r => r.classList.remove('selected-row'));
+                row.classList.add('selected-row');
+                state.selectedLicenseId = row.getAttribute('data-id');
+            };
+        });
+
         // Action events
         tbody.querySelectorAll('.edit-btn').forEach(btn => {
-            btn.onclick = () => openEditModal(btn.getAttribute('data-id'));
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                openEditModal(btn.getAttribute('data-id'));
+            };
         });
 
         tbody.querySelectorAll('.delete-btn').forEach(btn => {
@@ -697,8 +925,13 @@ async function loadSearchResults() {
                 <button class="page-btn" ${result.page === totalPages ? 'disabled' : ''} onclick="changePage(${result.page+1})">»</button>
             </div>
         `;
+
+        const resultsTable = document.getElementById('results-table');
+        if (resultsTable) {
+            resultsTable.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
     } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="13" class="error-state">${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="error-state">${err.message}</td></tr>`;
     }
 }
 
@@ -718,7 +951,7 @@ async function renderDeletedContracts() {
                         <span class="search-icon">🔍</span>
                         <input type="text" class="form-control" id="deleted-search-input" placeholder="${t('search_ph')}" value="${deletedSearchParams.search}">
                     </div>
-                    <div style="width: 150px">
+                    <div style="width: 180px">
                         <label>${t('deleted_status_filter')}</label>
                         <select class="form-control" id="deleted-filter-status">
                             <option value="">${t('opt_all')}</option>
@@ -726,28 +959,9 @@ async function renderDeletedContracts() {
                             <option value="expired" ${deletedSearchParams.status === 'expired' ? 'selected' : ''}>${t('opt_expired')}</option>
                         </select>
                     </div>
-                    <div style="width: 150px">
+                    <div style="width: 180px">
                         <label>${t('lbl_location')}</label>
-                        <select class="form-control" id="deleted-filter-location">
-                            <!-- Populated dynamically -->
-                        </select>
-                    </div>
-                    <div style="width: 150px">
-                        <label>${t('lbl_ctype')}</label>
-                        <select class="form-control" id="deleted-filter-ctype">
-                            <option value="">${t('opt_all')}</option>
-                            <option value="Public" ${deletedSearchParams.contract_type === 'Public' ? 'selected' : ''}>${t('opt_public')}</option>
-                            <option value="Private" ${deletedSearchParams.contract_type === 'Private' ? 'selected' : ''}>${t('opt_private')}</option>
-                        </select>
-                    </div>
-                    <div style="width: 150px">
-                        <label>${t('lbl_sort')}</label>
-                        <select class="form-control" id="deleted-filter-sort">
-                            <option value="signature_date|ASC" ${deletedSearchParams.sort_by === 'signature_date' && deletedSearchParams.sort_dir === 'ASC' ? 'selected' : ''}>${t('sort_oldest')}</option>
-                            <option value="signature_date|DESC" ${deletedSearchParams.sort_by === 'signature_date' && deletedSearchParams.sort_dir === 'DESC' ? 'selected' : ''}>${t('sort_newest')}</option>
-                            <option value="company_name|ASC" ${deletedSearchParams.sort_by === 'company_name' && deletedSearchParams.sort_dir === 'ASC' ? 'selected' : ''}>${t('sort_alpha_asc')}</option>
-                            <option value="company_name|DESC" ${deletedSearchParams.sort_by === 'company_name' && deletedSearchParams.sort_dir === 'DESC' ? 'selected' : ''}>${t('sort_alpha_desc')}</option>
-                        </select>
+                        ${buildLocationSelectHTML('deleted-filter-location', deletedSearchParams.activity_location, 'deleted-filter-location')}
                     </div>
                     <div class="d-flex align-center gap-8 mt-16">
                         <button class="btn btn-primary" id="btn-deleted-search">${t('btn_search')}</button>
@@ -761,61 +975,45 @@ async function renderDeletedContracts() {
             <table>
                 <thead>
                     <tr>
+                        <th>ID</th>
                         <th>${t('col_record')}</th>
-                        <th>${t('signing_date')}</th>
-                        <th>${t('company_carrier_name')}</th>
-                        <th>${t('registration_code')}</th>
-                        <th>${t('company_address')}</th>
-                        <th>${t('vehicle_registration_number')}</th>
-                        <th>${t('vehicle_type_category')}</th>
-                        <th>${t('route')}</th>
-                        <th>${t('license_expiry_date')}</th>
-                        <th>${t('carrier_type')}</th>
-                        <th>${t('transported_materials')}</th>
+                        <th>${t('col_license')}</th>
+                        <th>${t('col_driver')}</th>
+                        <th>${t('col_vehicle')}</th>
+                        <th>${t('col_company')}</th>
+                        <th>${t('col_location')}</th>
                         <th>${t('col_status')}</th>
                         <th>${t('col_actions')}</th>
                     </tr>
                 </thead>
                 <tbody id="deleted-results-body">
-                    <tr><td colspan="13" class="text-center"><div class="spinner"></div></td></tr>
+                    <tr><td colspan="9" class="text-center"><div class="spinner"></div></td></tr>
                 </tbody>
             </table>
         </div>
         <div id="deleted-pagination" class="pagination"></div>
     `;
 
-    const filterLocation = document.getElementById('deleted-filter-location');
-    await populateCommunesSelect(filterLocation, deletedSearchParams.activity_location, true);
-
     const searchInput = document.getElementById('deleted-search-input');
     const filterStatus = document.getElementById('deleted-filter-status');
-    const filterCtype = document.getElementById('deleted-filter-ctype');
-    const filterSort = document.getElementById('deleted-filter-sort');
+    const filterLocation = document.getElementById('deleted-filter-location');
 
-    const triggerSearch = () => {
+    const triggerDeletedSearch = debounce(() => {
         deletedSearchParams.search = searchInput.value;
         deletedSearchParams.status = filterStatus.value;
         deletedSearchParams.activity_location = filterLocation.value;
-        deletedSearchParams.contract_type = filterCtype.value;
-        
-        const [sort_by, sort_dir] = filterSort.value.split('|');
-        deletedSearchParams.sort_by = sort_by;
-        deletedSearchParams.sort_dir = sort_dir;
-        
         deletedSearchParams.page = 1;
         loadDeletedResults();
-    };
+    }, 400);
 
-    searchInput.oninput = debounce(triggerSearch, 250);
-    filterStatus.onchange = triggerSearch;
-    filterLocation.onchange = triggerSearch;
-    filterCtype.onchange = triggerSearch;
-    filterSort.onchange = triggerSearch;
+    searchInput.oninput = triggerDeletedSearch;
+    filterStatus.onchange = triggerDeletedSearch;
+    filterLocation.onchange = triggerDeletedSearch;
 
-    document.getElementById('btn-deleted-search').onclick = triggerSearch;
+    document.getElementById('btn-deleted-search').onclick = triggerDeletedSearch;
 
     document.getElementById('btn-deleted-reset').onclick = () => {
-        deletedSearchParams = { page: 1, limit: 50, search: '', status: '', activity_location: '', contract_type: '', sort_by: 'signature_date', sort_dir: 'DESC' };
+        deletedSearchParams = { page: 1, limit: 50, search: '', status: '', activity_location: '' };
         renderDeletedContracts();
     };
 
@@ -829,34 +1027,20 @@ async function loadDeletedResults() {
     try {
         const result = await API.getDeletedLicenses(deletedSearchParams);
         if (result.records.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="13">
-                        <div class="empty-state">
-                            <div class="empty-icon">🔍</div>
-                            <h3>${t('no_results_found')}</h3>
-                            <p>${t('try_adjust_filter')}</p>
-                        </div>
-                    </td>
-                </tr>
-            `;
+            tbody.innerHTML = `<tr><td colspan="9" class="empty-state">${t('no_deleted_records')}</td></tr>`;
             pagination.innerHTML = '';
             return;
         }
 
         tbody.innerHTML = result.records.map(r => `
             <tr>
+                <td>${r.id}</td>
                 <td>${r.record_number}</td>
-                <td>${r.signature_date || '-'}</td>
-                <td>${r.company_name}</td>
-                <td>${r.company_reg || '-'}</td>
-                <td>${r.company_address || '-'}</td>
+                <td>${r.license_number}</td>
+                <td>${r.driver_name}</td>
                 <td>${r.vehicle_reg}</td>
-                <td>${r.vehicle_type || ''} ${r.vehicle_category || ''}</td>
-                <td>${r.route_dest || ''}</td>
-                <td>${r.expiration_date}</td>
-                <td>${t('opt_' + r.carrier_type.toLowerCase()) || r.carrier_type}</td>
-                <td>${r.hazmat_type || '-'}</td>
+                <td>${r.company_name}</td>
+                <td>${r.activity_location || '-'}</td>
                 <td><span class="badge ${r.status === 'active' ? 'badge-green' : 'badge-red'}">${t('opt_' + r.status)}</span></td>
                 <td>
                     <button class="btn btn-sm btn-primary restore-btn" data-id="${r.id}">${t('btn_restore')}</button>
@@ -871,7 +1055,11 @@ async function loadDeletedResults() {
                     showToast(t('restore_ok'), 'success');
                     loadDeletedResults();
                 } catch (err) {
-                    showToast(err.message, 'error');
+                    if (err.message.includes('Associated vehicle or company is deleted') || err.message.includes('missing or deleted')) {
+                        showToast(t('err_cannot_restore_deleted'), 'error');
+                    } else {
+                        showToast(err.message, 'error');
+                    }
                 }
             };
         });
@@ -888,7 +1076,7 @@ async function loadDeletedResults() {
             </div>
         `;
     } catch (err) {
-        tbody.innerHTML = `<tr><td colspan="13" class="error-state">${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="error-state">${err.message}</td></tr>`;
     }
 }
 
@@ -910,10 +1098,6 @@ window.changeDeletedPage = (p) => {
  * What data it uses: Fetches comprehensive statistics from the backend API.
  */
 async function renderStatistics() {
-    /**
-     * What it does: Destroys all existing Chart.js instances.
-     * Why it exists: To prevent memory leaks and canvas conflicts when re-rendering the page.
-     */
     Object.values(statsCharts).forEach(chart => chart.destroy());
     statsCharts = {};
 
@@ -922,9 +1106,9 @@ async function renderStatistics() {
     try {
         const advanced = await API.statsAdvanced();
 
-        const kpis = advanced?.kpis || { total: 0, active: 0, inactive: 0, public: 0, private: 0 };
+        const kpis = advanced?.kpis || { total: 0, active: 0, inactive: 0, public: 0, private: 0, total_licenses: 0, active_licenses: 0, expired_licenses: 0 };
         const municipalities = advanced?.municipalities || {};
-        const activity = advanced?.activity || { daily: [], weekly: [], monthly: [] };
+        const activity = advanced?.activity || { daily: [], weekly: [], monthly: [], yearly: [] };
         const municipalityStats = Object.entries(municipalities)
             .map(([name, data]) => ({ name, ...data }))
             .sort((a, b) => b.total - a.total);
@@ -934,6 +1118,7 @@ async function renderStatistics() {
         const html = `
             <div class="stats-dashboard">
                 <!-- Tier 1: KPI Cards -->
+                <div class="section-title" style="margin-top:0">${t('sect_carrier_stats') || 'Carrier Statistics'}</div>
                 <div class="kpi-section">
                     <div class="kpi-card total">
                         <div class="kpi-title">📊 ${t('kpi_total_carriers')}</div>
@@ -957,12 +1142,28 @@ async function renderStatistics() {
                     </div>
                 </div>
 
+                <div class="section-title mt-16">${t('sect_license_stats') || 'License Statistics'}</div>
+                <div class="kpi-section">
+                    <div class="kpi-card total">
+                        <div class="kpi-title">📄 ${t('kpi_total_licenses')}</div>
+                        <div class="kpi-value">${kpis.total_licenses || 0}</div>
+                    </div>
+                    <div class="kpi-card active">
+                        <div class="kpi-title">✅ ${t('kpi_active_licenses')}</div>
+                        <div class="kpi-value">${kpis.active_licenses || 0}</div>
+                    </div>
+                    <div class="kpi-card inactive">
+                        <div class="kpi-title">❌ ${t('kpi_expired_licenses')}</div>
+                        <div class="kpi-value">${kpis.expired_licenses || 0}</div>
+                    </div>
+                </div>
+
                 <!-- Tier 2: Distribution -->
                 <div class="distribution-section">
                     <div class="chart-container">
                         <div class="chart-title">${t('chart_title_municipality_dist')}</div>
                         <div class="chart-canvas-container">
-                            <canvas id="municipalityBarChart"></canvas>
+                            <canvas id="municipalityPieChart"></canvas>
                         </div>
                     </div>
                     <div class="chart-container">
@@ -971,14 +1172,20 @@ async function renderStatistics() {
                             <canvas id="carrierTypePieChart"></canvas>
                         </div>
                     </div>
+                    <div class="chart-container">
+                        <div class="chart-title">${t('chart_title_license_status')}</div>
+                        <div class="chart-canvas-container">
+                            <canvas id="licenseStatusPieChart"></canvas>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Tier 3: Activity Analysis -->
                 <div class="activity-section">
                     <div class="activity-tabs">
-                        <button class="activity-tab active" data-period="daily">${t('daily')}</button>
-                        <button class="activity-tab" data-period="weekly">${t('weekly')}</button>
+                        <button class="activity-tab active" data-period="weekly">${t('weekly')}</button>
                         <button class="activity-tab" data-period="monthly">${t('monthly')}</button>
+                        <button class="activity-tab" data-period="yearly">${t('yearly')}</button>
                     </div>
                     <div class="chart-container">
                          <div class="chart-title">${t('chart_title_activity')}</div>
@@ -987,24 +1194,15 @@ async function renderStatistics() {
                         </div>
                     </div>
                 </div>
-                
-                <div class="municipality-section">
-                    <div class="chart-container">
-                        <div class="chart-title">${t('chart_title_compliance_by_municipality')}</div>
-                        <div class="chart-canvas-container">
-                            <canvas id="municipalityGroupChart"></canvas>
-                        </div>
-                    </div>
-                </div>
             </div>
         `;
         el.content.innerHTML = html;
 
         // Initialize charts
-        initMunicipalityBarChart(topMunicipalities);
+        initMunicipalityPieChart(topMunicipalities);
         initCarrierTypePieChart(kpis);
-        initActivityLineChart('daily', activity);
-        initMunicipalityGroupChart(topMunicipalities);
+        initLicenseStatusPieChart(kpis);
+        initActivityLineChart('weekly', activity);
 
         // Setup event listeners
         setupActivityTabs(activity);
@@ -1021,61 +1219,61 @@ async function renderStatistics() {
  * ===================================================================
  */
 
-/**
- * What it does: Renders a bar chart showing the top 10 municipalities by carrier count.
- * Why it exists: To visually identify the main geographic hubs of carrier activity.
- * What data it uses: A sorted array of municipality statistics objects.
- */
-function initMunicipalityBarChart(municipalityRows) {
-    const ctx = document.getElementById('municipalityBarChart').getContext('2d');
+function initMunicipalityPieChart(municipalityRows) {
+    const ctx = document.getElementById('municipalityPieChart').getContext('2d');
     const rows = Array.isArray(municipalityRows) ? municipalityRows : [];
     const labels = rows.map(m => m.name);
     const data = rows.map(m => m.total);
 
     const colorPalette = generateColorPalette(labels.length);
 
-    statsCharts.municipalityBar = new Chart(ctx, {
-        type: 'bar',
+    statsCharts.municipalityPie = new Chart(ctx, {
+        type: 'pie',
         data: {
             labels: labels,
             datasets: [{
-                label: t('chart_label_total_carriers'),
                 data: data,
-                backgroundColor: colorPalette.map(c => `${c}b3`), // Add alpha
-                borderColor: colorPalette,
-                borderWidth: 1,
-                borderRadius: 4,
+                backgroundColor: colorPalette,
+                hoverBackgroundColor: colorPalette.map(c => adjustBrightness(c, 1.2)),
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderWidth: 2,
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: false },
+                legend: {
+                    position: 'bottom',
+                    labels: { usePointStyle: true }
+                },
                 tooltip: {
                     callbacks: {
-                        label: (context) => `${context.dataset.label}: ${context.parsed.y}`
+                        label: (context) => {
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = total > 0 ? ((context.parsed / total) * 100).toFixed(1) : 0;
+                            return `${context.label}: ${context.parsed} (${percentage}%)`;
+                        }
                     }
                 }
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: { color: 'rgba(128, 128, 128, 0.1)' }
-                },
-                x: {
-                    grid: { display: false }
+            onClick: (event, activeElements) => {
+                if (activeElements && activeElements.length > 0) {
+                    const firstPoint = activeElements[0];
+                    const label = statsCharts.municipalityPie.data.labels[firstPoint.index];
+                    
+                    searchParams.activity_location = label;
+                    searchParams.status = '';
+                    searchParams.search = '';
+                    searchParams.carrier = '';
+                    searchParams.page = 1;
+                    navigateTo('search');
                 }
             }
         }
     });
 }
 
-/**
- * What it does: Renders a doughnut chart showing the distribution of public vs. private carriers.
- * Why it exists: To provide a quick, at-a-glance understanding of the market composition.
- * What data it uses: The \`kpis\` object containing public and private carrier counts.
- */
 function initCarrierTypePieChart(carrierTotals) {
     const ctx = document.getElementById('carrierTypePieChart').getContext('2d');
     const data = [carrierTotals?.public || 0, carrierTotals?.private || 0];
@@ -1110,16 +1308,75 @@ function initCarrierTypePieChart(carrierTotals) {
                         }
                     }
                 }
+            },
+            onClick: (event, activeElements) => {
+                if (activeElements && activeElements.length > 0) {
+                    const firstPoint = activeElements[0];
+                    const carrierVal = firstPoint.index === 0 ? 'Public' : 'Private';
+                    
+                    searchParams.carrier = carrierVal;
+                    searchParams.status = '';
+                    searchParams.search = '';
+                    searchParams.activity_location = '';
+                    searchParams.page = 1;
+                    navigateTo('search');
+                }
             }
         }
     });
 }
 
-/**
- * What it does: Renders a line chart showing carrier activity over a specified time period.
- * Why it exists: To identify trends, seasonality, and patterns in carrier registration or activity.
- * What data it uses: The \`activity\` object from the backend, filtered by the selected period.
- */
+function initLicenseStatusPieChart(kpis) {
+    const ctx = document.getElementById('licenseStatusPieChart').getContext('2d');
+    const data = [kpis?.active_licenses || 0, kpis?.expired_licenses || 0];
+
+    statsCharts.licenseStatusPie = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: [t('opt_active'), t('opt_expired')],
+            datasets: [{
+                data: data,
+                backgroundColor: ['#10b981', '#ef4444'],
+                hoverBackgroundColor: [adjustBrightness('#10b981', 1.2), adjustBrightness('#ef4444', 1.2)],
+                borderColor: 'rgba(255, 255, 255, 0.1)',
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { usePointStyle: true }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: (context) => {
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = total > 0 ? ((context.parsed / total) * 100).toFixed(1) : 0;
+                            return `${context.label}: ${context.parsed} (${percentage}%)`;
+                        }
+                    }
+                }
+            },
+            onClick: (event, activeElements) => {
+                if (activeElements && activeElements.length > 0) {
+                    const firstPoint = activeElements[0];
+                    const statusVal = firstPoint.index === 0 ? 'active' : 'expired';
+                    
+                    searchParams.status = statusVal;
+                    searchParams.search = '';
+                    searchParams.carrier = '';
+                    searchParams.activity_location = '';
+                    searchParams.page = 1;
+                    navigateTo('search');
+                }
+            }
+        }
+    });
+}
+
 function initActivityLineChart(period, activityData) {
     if (statsCharts.activityLine) {
         statsCharts.activityLine.destroy();
@@ -1127,7 +1384,7 @@ function initActivityLineChart(period, activityData) {
     const ctx = document.getElementById('activityLineChart').getContext('2d');
     const periodData = Array.isArray(activityData?.[period]) ? activityData[period] : [];
     
-    const labels = periodData.map(d => d.date || d.week || d.month);
+    const labels = periodData.map(d => d.date || d.week || d.month || d.year);
     const data = periodData.map(d => d.count);
 
     statsCharts.activityLine = new Chart(ctx, {
@@ -1165,66 +1422,21 @@ function initActivityLineChart(period, activityData) {
                         maxTicksLimit: 15,
                     }
                 }
-            }
-        }
-    });
-}
-
-/**
- * What it does: Renders a grouped bar chart comparing active vs. inactive carriers per municipality.
- * Why it exists: To pinpoint specific geographic areas with potential compliance or data-quality issues.
- * What data it uses: A sorted array of municipality statistics objects.
- */
-function initMunicipalityGroupChart(municipalityRows) {
-    const ctx = document.getElementById('municipalityGroupChart').getContext('2d');
-    const rows = Array.isArray(municipalityRows) ? municipalityRows : [];
-    const labels = rows.map(m => m.name);
-    const activeData = rows.map(m => m.active);
-    const inactiveData = rows.map(m => m.inactive);
-
-    statsCharts.municipalityGroup = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: t('kpi_active_carriers'),
-                    data: activeData,
-                    backgroundColor: 'rgba(16, 185, 129, 0.7)',
-                    borderColor: '#10b981',
-                    borderWidth: 1,
-                    borderRadius: 4,
-                },
-                {
-                    label: t('kpi_inactive_carriers'),
-                    data: inactiveData,
-                    backgroundColor: 'rgba(239, 68, 68, 0.7)',
-                    borderColor: '#ef4444',
-                    borderWidth: 1,
-                    borderRadius: 4,
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { position: 'top' },
             },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    stacked: false,
-                    grid: { color: 'rgba(128, 128, 128, 0.1)' }
-                },
-                x: {
-                    stacked: false,
-                    grid: { display: false }
+            onClick: (event, activeElements) => {
+                if (activeElements && activeElements.length > 0) {
+                    const firstPoint = activeElements[0];
+                    const label = statsCharts.activityLine.data.labels[firstPoint.index];
+                    const val = statsCharts.activityLine.data.datasets[firstPoint.datasetIndex].data[firstPoint.index];
+                    const countText = t('records') || 'contracts';
+                    showToast(`${label}: ${val} ${countText}`, 'info');
                 }
             }
         }
     });
 }
+
+
 
 
 /**
@@ -1285,12 +1497,276 @@ function adjustBrightness(color, factor) {
     return `#${(r << 16 | g << 8 | b).toString(16).padStart(6, '0')}`;
 }
 
+// ── Multi-item helpers for Vehicles and Drivers ──
+// In-memory arrays for the active form (shared by add-contract & edit-modal)
+let _formVehicles = [];
+let _formDrivers = [];
+
+function getVehiclesListFromForm() { return [..._formVehicles]; }
+function getDriversListFromForm() { return [..._formDrivers]; }
+
+// ── Render vehicle table into a container ──
+function renderVehicleTable(container) {
+    if (_formVehicles.length === 0) {
+        container.innerHTML = `<div class="entity-empty">No vehicles added yet.</div>`;
+        return;
+    }
+    container.innerHTML = `
+        <table class="entity-table">
+            <thead><tr>
+                <th>#</th>
+                <th>${t('vehicle_reg')}</th>
+                <th>${t('vehicle_type')}</th>
+                <th>${t('vehicle_category')}</th>
+                <th>${t('col_actions')}</th>
+            </tr></thead>
+            <tbody>
+                ${_formVehicles.map((v, i) => `
+                    <tr>
+                        <td>${i + 1}</td>
+                        <td>${v.registration_number || '-'}</td>
+                        <td>${v.type || '-'}</td>
+                        <td>${v.category || '-'}</td>
+                        <td>
+                            <div class="entity-actions-cell">
+                                <button type="button" class="btn btn-sm btn-ghost veh-edit-btn" data-idx="${i}">✏️ ${t('btn_edit_item')}</button>
+                                <button type="button" class="btn btn-sm btn-danger veh-del-btn" data-idx="${i}">🗑️</button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+
+    container.querySelectorAll('.veh-edit-btn').forEach(btn => {
+        btn.onclick = (e) => { e.preventDefault(); openVehicleMiniModal(container, parseInt(btn.dataset.idx)); };
+    });
+    container.querySelectorAll('.veh-del-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            e.preventDefault();
+            _formVehicles.splice(parseInt(btn.dataset.idx), 1);
+            renderVehicleTable(container);
+        };
+    });
+}
+
+// ── Render driver table into a container ──
+function renderDriverTable(container) {
+    if (_formDrivers.length === 0) {
+        container.innerHTML = `<div class="entity-empty">No drivers added yet.</div>`;
+        return;
+    }
+    container.innerHTML = `
+        <table class="entity-table">
+            <thead><tr>
+                <th>#</th>
+                <th>${t('driver_name')}</th>
+                <th>${t('driver_phone')}</th>
+                <th>${t('col_actions')}</th>
+            </tr></thead>
+            <tbody>
+                ${_formDrivers.map((d, i) => `
+                    <tr>
+                        <td>${i + 1}</td>
+                        <td>${d.name || '-'}</td>
+                        <td>${d.phone || '-'}</td>
+                        <td>
+                            <div class="entity-actions-cell">
+                                <button type="button" class="btn btn-sm btn-ghost drv-edit-btn" data-idx="${i}">✏️ ${t('btn_edit_item')}</button>
+                                <button type="button" class="btn btn-sm btn-danger drv-del-btn" data-idx="${i}">🗑️</button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>
+    `;
+
+    container.querySelectorAll('.drv-edit-btn').forEach(btn => {
+        btn.onclick = (e) => { e.preventDefault(); openDriverMiniModal(container, parseInt(btn.dataset.idx)); };
+    });
+    container.querySelectorAll('.drv-del-btn').forEach(btn => {
+        btn.onclick = (e) => {
+            e.preventDefault();
+            _formDrivers.splice(parseInt(btn.dataset.idx), 1);
+            renderDriverTable(container);
+        };
+    });
+}
+
+// ── Mini-modal: Add/Edit Vehicle ──
+function openVehicleMiniModal(tableContainer, editIndex = -1) {
+    const isEdit = editIndex >= 0;
+    const existing = isEdit ? _formVehicles[editIndex] : {};
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'mini-modal-backdrop';
+    backdrop.innerHTML = `
+        <div class="mini-modal">
+            <div class="mini-modal-header">
+                <h3>${isEdit ? t('mini_title_edit_vehicle') : t('mini_title_add_vehicle')}</h3>
+                <button class="modal-close mini-close">✕</button>
+            </div>
+            <div class="mini-modal-body">
+                <div class="form-group">
+                    <label>${t('vehicle_reg')} *</label>
+                    <input type="text" class="form-control" id="mini-veh-reg" value="${existing.registration_number || ''}">
+                    <div class="field-error" id="mini-veh-reg-err"></div>
+                </div>
+                <div class="form-group">
+                    <label>${t('vehicle_type')}</label>
+                    <select class="form-control" id="mini-veh-type">
+                        <option value="">-- Choose type --</option>
+                        <option value="Heavy Truck" ${existing.type === 'Heavy Truck' ? 'selected' : ''}>${t('vt_heavy_truck')}</option>
+                        <option value="Semi-Trailer Tanker" ${existing.type === 'Semi-Trailer Tanker' ? 'selected' : ''}>${t('vt_semi_trailer')}</option>
+                        <option value="Rigid Tanker" ${existing.type === 'Rigid Tanker' ? 'selected' : ''}>${t('vt_rigid_tanker')}</option>
+                        <option value="Cargo Van" ${existing.type === 'Cargo Van' ? 'selected' : ''}>${t('vt_cargo_van')}</option>
+                        <option value="Flatbed Truck" ${existing.type === 'Flatbed Truck' ? 'selected' : ''}>${t('vt_flatbed_truck')}</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>${t('vehicle_category')}</label>
+                    <input type="text" class="form-control" id="mini-veh-cat" value="${existing.category || ''}">
+                </div>
+            </div>
+            <div class="mini-modal-footer">
+                <button class="btn btn-ghost mini-cancel">${t('btn_cancel')}</button>
+                <button class="btn btn-primary mini-save">${t('btn_save')}</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(backdrop);
+
+    const close = () => backdrop.remove();
+    backdrop.querySelector('.mini-close').onclick = close;
+    backdrop.querySelector('.mini-cancel').onclick = close;
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+
+    backdrop.querySelector('.mini-save').onclick = () => {
+        const reg = document.getElementById('mini-veh-reg').value.trim();
+        const type = document.getElementById('mini-veh-type').value;
+        const cat = document.getElementById('mini-veh-cat').value.trim();
+
+        if (!reg) {
+            document.getElementById('mini-veh-reg-err').textContent = t('invalid_required');
+            document.getElementById('mini-veh-reg').classList.add('input-invalid');
+            return;
+        }
+
+        // Check duplicate registration across other items
+        const dupIdx = _formVehicles.findIndex((v, idx) =>
+            v.registration_number === reg && idx !== editIndex
+        );
+        if (dupIdx >= 0) {
+            document.getElementById('mini-veh-reg-err').textContent = `Registration "${reg}" already exists in this contract.`;
+            document.getElementById('mini-veh-reg').classList.add('input-invalid');
+            return;
+        }
+
+        const entry = { registration_number: reg, type, category: cat };
+        if (isEdit) {
+            _formVehicles[editIndex] = entry;
+        } else {
+            _formVehicles.push(entry);
+        }
+        renderVehicleTable(tableContainer);
+        close();
+    };
+}
+
+// ── Mini-modal: Add/Edit Driver ──
+function openDriverMiniModal(tableContainer, editIndex = -1) {
+    const isEdit = editIndex >= 0;
+    const existing = isEdit ? _formDrivers[editIndex] : {};
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'mini-modal-backdrop';
+    backdrop.innerHTML = `
+        <div class="mini-modal">
+            <div class="mini-modal-header">
+                <h3>${isEdit ? t('mini_title_edit_driver') : t('mini_title_add_driver')}</h3>
+                <button class="modal-close mini-close">✕</button>
+            </div>
+            <div class="mini-modal-body">
+                <div class="form-group">
+                    <label>${t('driver_name')} *</label>
+                    <input type="text" class="form-control" id="mini-drv-name" value="${existing.name || ''}">
+                    <div class="field-error" id="mini-drv-name-err"></div>
+                </div>
+                <div class="form-group">
+                    <label>${t('driver_phone')}</label>
+                    <input type="text" class="form-control" id="mini-drv-phone" value="${existing.phone || ''}">
+                </div>
+            </div>
+            <div class="mini-modal-footer">
+                <button class="btn btn-ghost mini-cancel">${t('btn_cancel')}</button>
+                <button class="btn btn-primary mini-save">${t('btn_save')}</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(backdrop);
+
+    const close = () => backdrop.remove();
+    backdrop.querySelector('.mini-close').onclick = close;
+    backdrop.querySelector('.mini-cancel').onclick = close;
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(); });
+
+    backdrop.querySelector('.mini-save').onclick = () => {
+        const name = document.getElementById('mini-drv-name').value.trim();
+        const phone = document.getElementById('mini-drv-phone').value.trim();
+
+        if (!name) {
+            document.getElementById('mini-drv-name-err').textContent = t('invalid_required');
+            document.getElementById('mini-drv-name').classList.add('input-invalid');
+            return;
+        }
+
+        const entry = { name, phone };
+        if (isEdit) {
+            _formDrivers[editIndex] = entry;
+        } else {
+            _formDrivers.push(entry);
+        }
+        renderDriverTable(tableContainer);
+        close();
+    };
+}
+
+// Build the vehicle section card HTML
+function buildVehicleSectionHTML(containerId, addBtnId) {
+    return `
+        <div class="entity-section">
+            <div class="entity-section-header">
+                <h4>🚚 ${t('sect_vehicle')}</h4>
+                <button type="button" class="btn btn-sm btn-primary" id="${addBtnId}">${t('btn_add_vehicle')}</button>
+            </div>
+            <div id="${containerId}"></div>
+        </div>
+    `;
+}
+
+// Build the driver section card HTML
+function buildDriverSectionHTML(containerId, addBtnId) {
+    return `
+        <div class="entity-section">
+            <div class="entity-section-header">
+                <h4>👤 ${t('sect_driver')}</h4>
+                <button type="button" class="btn btn-sm btn-primary" id="${addBtnId}">${t('btn_add_driver')}</button>
+            </div>
+            <div id="${containerId}"></div>
+        </div>
+    `;
+}
+
 // ── Add Contract Page ──────────────────────────────────────
 
 async function renderAddContract() {
+    // Reset in-memory lists for the new form
+    _formVehicles = [];
+    _formDrivers = [];
+    
     try {
-        // The contract create page intentionally stays single-window so users can
-        // enter every required field in one pass without a follow-up stepper.
         el.content.innerHTML = `
             <div class="card">
                 <div class="card-header">
@@ -1298,70 +1774,58 @@ async function renderAddContract() {
                 </div>
                 <div class="card-body">
                     <form id="contract-form">
-                        <!-- Single Section Add Contract -->
-                        <div class="section-title">${t('add_contract_title')}</div>
+                        <!-- Contract -->
+                        <div class="section-title">${t('sect_contract')}</div>
                         
+                        <!-- Line 1: Registration Number & Registry (Record) Number -->
                         <div class="form-row">
+                            <div class="form-group">
+                                <label>${t('registration_number')} *</label>
+                                <input type="text" class="form-control" name="registration_number" data-validate="required|numbers">
+                                <div class="field-error" data-error-for="registration_number"></div>
+                            </div>
                             <div class="form-group">
                                 <label>${t('record_number')} *</label>
                                 <input type="text" class="form-control" name="record_number" data-validate="required|numbers">
                                 <div class="field-error" data-error-for="record_number"></div>
                             </div>
+                        </div>
+                        
+                        <!-- Line 2: Start Date & End Date -->
+                        <div class="form-row">
                             <div class="form-group">
-                                <label>${t('signing_date')} *</label>
+                                <label>${t('signature_date')} *</label>
                                 <input type="date" class="form-control" name="signature_date" data-validate="required">
                                 <div class="field-error" data-error-for="signature_date"></div>
                             </div>
-                        </div>
-
-                        <div class="form-row">
                             <div class="form-group">
-                                <label>${t('company_carrier_name')} *</label>
-                                <input type="text" class="form-control" name="company_name" data-validate="required|letters">
-                                <div class="field-error" data-error-for="company_name"></div>
-                            </div>
-                            <div class="form-group">
-                                <label>${t('registration_code')}</label>
-                                <input type="text" class="form-control" name="company_reg" data-validate="numbers">
-                                <div class="field-error" data-error-for="company_reg"></div>
-                            </div>
-                        </div>
-
-                        <div class="form-group">
-                            <label>${t('company_address')} *</label>
-                            <select class="form-control" name="company_address" data-validate="required">
-                                <!-- Options: populated later by user -->
-                                <option value="">${t('select_address')}</option>
-                            </select>
-                            <div class="field-error" data-error-for="company_address"></div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>${t('vehicle_registration_number')} *</label>
-                                <input type="text" class="form-control" name="vehicle_reg" data-validate="required|numbers">
-                                <div class="field-error" data-error-for="vehicle_reg"></div>
-                            </div>
-                            <div class="form-group">
-                                <label>${t('vehicle_type_category')} *</label>
-                                <input type="text" class="form-control" name="vehicle_type_category" data-validate="required" placeholder="e.g. Truck A">
-                                <div class="field-error" data-error-for="vehicle_type_category"></div>
-                            </div>
-                        </div>
-
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>${t('route')} *</label>
-                                <input type="text" class="form-control" name="route" data-validate="required" placeholder="e.g. Setif">
-                                <div class="field-error" data-error-for="route"></div>
-                            </div>
-                            <div class="form-group">
-                                <label>${t('license_expiry_date')} *</label>
+                                <label>${t('expiration_date')} *</label>
                                 <input type="date" class="form-control" name="expiration_date" data-validate="required">
                                 <div class="field-error" data-error-for="expiration_date"></div>
                             </div>
                         </div>
 
+                        <!-- Line 3: Activity Location -->
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>${t('activity_location')}</label>
+                                ${buildLocationSelectHTML('activity_location')}
+                            </div>
+                        </div>
+
+                        <!-- Company -->
+                        <div class="section-title mt-16">${t('sect_company')}</div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>${t('company_name')} *</label>
+                                <input type="text" class="form-control" name="company_name" data-validate="required|letters">
+                                <div class="field-error" data-error-for="company_name"></div>
+                            </div>
+                            <div class="form-group">
+                                <label>${t('company_address')}</label>
+                                <input type="text" class="form-control" name="company_address">
+                            </div>
+                        </div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label>${t('carrier_type')}</label>
@@ -1371,10 +1835,54 @@ async function renderAddContract() {
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>${t('transported_materials')} *</label>
-                                <input type="text" class="form-control" name="hazmat_type" data-validate="required">
-                                <div class="field-error" data-error-for="hazmat_type"></div>
+                                <label>${t('account_type')}</label>
+                                <select class="form-control" name="account_type">
+                                    <option value="Public">${t('opt_public')}</option>
+                                    <option value="Private">${t('opt_private')}</option>
+                                </select>
                             </div>
+                        </div>
+
+                        <!-- Vehicles (card table) -->
+                        ${buildVehicleSectionHTML('vehicles-table-body', 'btn-add-vehicle')}
+
+                        <!-- Drivers (card table) -->
+                        ${buildDriverSectionHTML('drivers-table-body', 'btn-add-driver')}
+
+                        <!-- Route & Hazmat -->
+                        <div class="section-title mt-16">${t('sect_route')}</div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>${t('route_origin')}</label>
+                                <input type="text" class="form-control" name="route_origin" data-validate="letters">
+                                <div class="field-error" data-error-for="route_origin"></div>
+                            </div>
+                            <div class="form-group">
+                                <label>${t('route_dest')}</label>
+                                <input type="text" class="form-control" name="route_dest" data-validate="letters">
+                                <div class="field-error" data-error-for="route_dest"></div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>${t('hazmat_type')}</label>
+                            <select class="form-control" name="hazmat_type" id="hazmat-type-select">
+                                <option value="">-- Choose type --</option>
+                                <option value="Class 3 (Flammable Liquids)">${t('mat_class_3')}</option>
+                                <option value="Class 1 (Explosives)">${t('mat_class_1')}</option>
+                                <option value="Class 2.1 (Flammable Gases)">${t('mat_class_2_1')}</option>
+                                <option value="Class 2.2 (Non-Flammable/Non-Toxic Gases)">${t('mat_class_2_2')}</option>
+                                <option value="Class 2.3 (Toxic Gases)">${t('mat_class_2_3')}</option>
+                                <option value="Class 4.1 (Flammable Solids)">${t('mat_class_4_1')}</option>
+                                <option value="Class 5.1 (Oxidizing Substances)">${t('mat_class_5_1')}</option>
+                                <option value="Class 6.1 (Toxic Substances)">${t('mat_class_6_1')}</option>
+                                <option value="Class 8 (Corrosive Substances)">${t('mat_class_8')}</option>
+                                <option value="Class 9 (Miscellaneous Dangerous Substances)">${t('mat_class_9')}</option>
+                                <option value="Autre">${t('mat_other') || 'Other'}</option>
+                            </select>
+                        </div>
+                        <div class="form-group hidden" id="custom-hazmat-wrapper">
+                            <label>${t('lbl_custom_hazmat') || 'Custom Material Type'}</label>
+                            <input type="text" class="form-control" id="custom-hazmat-input">
                         </div>
 
                         <!-- Actions -->
@@ -1387,13 +1895,53 @@ async function renderAddContract() {
             </div>
         `;
 
+        // Initialize vehicle/driver table containers
+        const vehTableBody = document.getElementById('vehicles-table-body');
+        const drvTableBody = document.getElementById('drivers-table-body');
+        renderVehicleTable(vehTableBody);
+        renderDriverTable(drvTableBody);
+
+        document.getElementById('btn-add-vehicle').onclick = (e) => {
+            e.preventDefault();
+            openVehicleMiniModal(vehTableBody);
+        };
+        document.getElementById('btn-add-driver').onclick = (e) => {
+            e.preventDefault();
+            openDriverMiniModal(drvTableBody);
+        };
+
+        // Toggle custom material input wrapper on selection
+        const hazmatSelect = document.getElementById('hazmat-type-select');
+        const customHazmatWrapper = document.getElementById('custom-hazmat-wrapper');
+        const customHazmatInput = document.getElementById('custom-hazmat-input');
+        if (hazmatSelect && customHazmatWrapper) {
+            hazmatSelect.onchange = () => {
+                if (hazmatSelect.value === 'Autre') {
+                    customHazmatWrapper.classList.remove('hidden');
+                } else {
+                    customHazmatWrapper.classList.add('hidden');
+                    if (customHazmatInput) customHazmatInput.value = '';
+                }
+            };
+        }
+
         // Validation for the form fields
         setupContractFormValidation();
         document.getElementById('contract-form').addEventListener('submit', handleFormSubmit);
 
-        // Populate company address options from Setif communes JSON
-        const select = document.querySelector('select[name="company_address"]');
-        await populateCommunesSelect(select, '');
+        // Fetch next record number and pre-fill
+        try {
+            const nextRecData = await API.nextRecordNumber();
+            const recNumInput = document.querySelector('input[name="record_number"]');
+            if (recNumInput && nextRecData && nextRecData.next_record_number) {
+                recNumInput.value = nextRecData.next_record_number;
+                // Trigger input validation so the form knows it is valid
+                const event = new Event('input', { bubbles: true });
+                recNumInput.dispatchEvent(event);
+            }
+        } catch (e) {
+            console.error("Failed to fetch next record number:", e);
+        }
     } catch (err) {
         el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
         showToast(err.message, 'error');
@@ -1404,89 +1952,42 @@ async function renderAddContract() {
 
 async function handleFormSubmit(event) {
     event.preventDefault();
-    const form = event.target;
-    
-    // Validate form to display errors if any are present
+    const submitBtn = document.getElementById('submit-btn');
     if (!validateContractForm()) {
         showToast(t('form_has_errors'), 'error');
         return;
     }
-    
-    const submitBtn = document.getElementById('submit-btn');
     submitBtn.disabled = true;
     submitBtn.textContent = t('btn_saving');
 
-    const formData = new FormData(form);
+    const formData = new FormData(event.target);
     const data = Object.fromEntries(formData.entries());
 
-    // Final duplicate check
-    try {
-        const checkRecord = await API.checkDuplicate({ record_number: data.record_number.trim() });
-        if (checkRecord.is_duplicate) {
-            const errEl = form.querySelector('[data-error-for="record_number"]');
-            if (errEl) errEl.textContent = t('err_duplicate_registration');
-            form.querySelector('[name="record_number"]').classList.add('input-invalid');
-            showToast(t('form_has_errors'), 'error');
-            submitBtn.disabled = false;
-            submitBtn.textContent = t('btn_save');
-            return;
-        }
-        
-        const checkVehicle = await API.checkDuplicate({ vehicle_reg: data.vehicle_reg.trim() });
-        if (checkVehicle.is_duplicate) {
-            const errEl = form.querySelector('[data-error-for="vehicle_reg"]');
-            if (errEl) errEl.textContent = t('err_duplicate_registration');
-            form.querySelector('[name="vehicle_reg"]').classList.add('input-invalid');
-            showToast(t('form_has_errors'), 'error');
-            submitBtn.disabled = false;
-            submitBtn.textContent = t('btn_save');
-            return;
-        }
-    } catch (err) {
-        console.error(err);
+    // Map custom material type if Autre is selected
+    const hazmatSelect = document.getElementById('hazmat-type-select');
+    const customHazmatInput = document.getElementById('custom-hazmat-input');
+    if (hazmatSelect && hazmatSelect.value === 'Autre' && customHazmatInput) {
+        data.hazmat_type = customHazmatInput.value.trim() || 'Autre';
     }
 
-    // Map frontend clean fields to backend legacy model structure
-    const payload = {
-        record_number: data.record_number,
-        company_name: data.company_name,
-        company_reg: data.company_reg || "",
-        company_address: data.company_address || "",
-        vehicle_reg: data.vehicle_reg,
-        expiration_date: data.expiration_date || "",
-        signature_date: data.signature_date || "",
-        carrier_type: data.carrier_type || "Public",
-        account_type: data.carrier_type || "Public",
-        contract_type: data.carrier_type || "Public",
-        hazmat_type: data.hazmat_type || "",
-        // Default empty strings/null for un-exposed required schema keys
-        driver_name: "",
-        driver_phone: "",
-        route_checkpoints: "",
-        deletion_days: null,
-        // Auto-generate license_number based on record_number
-        license_number: 'LIC-' + data.record_number,
-        // Default activity location to the commune name from address
-        activity_location: data.company_address ? data.company_address.split(',')[0].trim() : ""
-    };
+    const vList = getVehiclesListFromForm();
+    const dList = getDriversListFromForm();
 
-    // Split vehicle type and category by space
-    const typeCat = (data.vehicle_type_category || "").trim();
-    if (typeCat) {
-        const parts = typeCat.split(/\s+/);
-        payload.vehicle_type = parts[0] || "";
-        payload.vehicle_category = parts.slice(1).join(" ") || "";
-    } else {
-        payload.vehicle_type = "";
-        payload.vehicle_category = "";
+    data.vehicles_list = JSON.stringify(vList);
+    data.drivers_list = JSON.stringify(dList);
+
+    if (vList.length > 0) {
+        data.vehicle_reg = vList[0].registration_number;
+        data.vehicle_type = vList[0].type;
+        data.vehicle_category = vList[0].category;
+    }
+    if (dList.length > 0) {
+        data.driver_name = dList[0].name;
+        data.driver_phone = dList[0].phone;
     }
 
-    // Map single route input directly to destination, leaving origin empty
-    payload.route_origin = "";
-    payload.route_dest = data.route ? data.route.trim() : "";
-
     try {
-        await API.createLicense(payload);
+        await API.createLicense(data);
         showToast(t('saved_ok'), 'success');
         navigateTo('dashboard');
     } catch (err) {
@@ -1497,55 +1998,20 @@ async function handleFormSubmit(event) {
 }
 
 function setupContractFormValidation() {
-    const form = document.getElementById('contract-form');
-    const submitBtn = document.getElementById('submit-btn');
+    const form = document.getElementById('contract-form') || document.getElementById('edit-form');
+    if (!form) return;
+    const submitBtn = document.getElementById('submit-btn') || document.getElementById('edit-save');
+    if (!submitBtn) return;
     const trackedInputs = Array.from(form.querySelectorAll('[data-validate]'));
 
-    let duplicateErrors = {
-        record_number: '',
-        vehicle_reg: ''
-    };
-
-    async function checkFieldDuplicate(input) {
-        const val = input.value.trim();
-        if (!val) {
-            duplicateErrors[input.name] = '';
-            validateInput(input);
-            validateAll();
-            return;
-        }
-        if (input.name === 'record_number' || input.name === 'vehicle_reg') {
-            try {
-                const params = {};
-                params[input.name] = val;
-                const res = await API.checkDuplicate(params);
-                if (res.is_duplicate) {
-                    duplicateErrors[input.name] = t('err_duplicate_registration');
-                } else {
-                    duplicateErrors[input.name] = '';
-                }
-            } catch (err) {
-                console.error("Duplicate check failed", err);
-            }
-            validateInput(input);
-            validateAll();
-        }
-    }
-
     function setError(input, message) {
-        const errorEl = form.querySelector(`[data-error-for="${input.name}"]`);
-        if (!errorEl) return;
-        
-        // Show validation error only if it's touched or if form is submitted
-        const shouldShowError = input.classList.contains('touched') || form.classList.contains('submitted');
-        
-        if (shouldShowError && message) {
-            errorEl.textContent = message;
-            input.classList.add('input-invalid');
-        } else {
-            errorEl.textContent = '';
-            input.classList.remove('input-invalid');
+        let errorEl = form.querySelector(`[data-error-for="${input.name}"]`);
+        if (!errorEl) {
+            errorEl = input.parentNode.querySelector('.field-error');
         }
+        if (!errorEl) return;
+        errorEl.textContent = message || '';
+        input.classList.toggle('input-invalid', Boolean(message));
     }
 
     function validateInput(input) {
@@ -1575,166 +2041,62 @@ function setupContractFormValidation() {
             return false;
         }
 
-        if (duplicateErrors[input.name]) {
-            setError(input, duplicateErrors[input.name]);
-            return false;
-        }
-
         setError(input, '');
         return true;
     }
 
-    function checkDateChronology() {
+    function validateAll() {
+        let allValid = trackedInputs.every(validateInput);
+
         const sigInput = form.querySelector('[name="signature_date"]');
         const expInput = form.querySelector('[name="expiration_date"]');
-        if (!sigInput || !expInput) return true;
-
-        const sigVal = sigInput.value;
-        const expVal = expInput.value;
-        const errEl = form.querySelector('[data-error-for="expiration_date"]');
-        if (!errEl) return true;
-
-        const isTouchedOrSubmitted = expInput.classList.contains('touched') || sigInput.classList.contains('touched') || form.classList.contains('submitted');
-
-        if (sigVal && expVal) {
-            if (expVal <= sigVal) {
-                if (isTouchedOrSubmitted) {
-                    errEl.textContent = t('err_date_chronology');
-                    expInput.classList.add('input-invalid');
-                }
-                return false;
-            } else {
-                if (errEl.textContent === t('err_date_chronology')) {
-                    errEl.textContent = '';
-                    expInput.classList.remove('input-invalid');
+        if (sigInput && expInput) {
+            const sigVal = sigInput.value;
+            const expVal = expInput.value;
+            if (sigVal && expVal) {
+                if (new Date(expVal) < new Date(sigVal)) {
+                    setError(expInput, t('err_date_chronology'));
+                    allValid = false;
+                } else {
+                    let errEl = form.querySelector(`[data-error-for="expiration_date"]`) || expInput.parentNode.querySelector('.field-error');
+                    if (errEl && errEl.textContent === t('err_date_chronology')) {
+                        setError(expInput, '');
+                    }
                 }
             }
         }
-        return true;
+
+        submitBtn.disabled = !allValid;
+        return allValid;
     }
-
-    function validateAll() {
-        let formIsValid = true;
-        trackedInputs.forEach(input => {
-            const isInputValid = validateInput(input);
-            if (!isInputValid) {
-                formIsValid = false;
-            }
-        });
-        
-        const isChronologyValid = checkDateChronology();
-        if (!isChronologyValid) {
-            formIsValid = false;
-        }
-
-        submitBtn.disabled = !formIsValid;
-        return formIsValid;
-    }
-
-    const checkDuplicateDebounced = debounce(async (input) => {
-        await checkFieldDuplicate(input);
-    }, 500);
 
     trackedInputs.forEach(input => {
-        if (input.name === 'record_number' || input.name === 'vehicle_reg') {
-            input.addEventListener('input', () => {
-                checkDuplicateDebounced(input);
-            });
-            input.addEventListener('blur', () => {
-                checkFieldDuplicate(input);
-            });
-        }
+        // Prevent duplicate listener bindings
+        if (input.dataset.hasListener) return;
+        input.dataset.hasListener = "true";
+        
         input.addEventListener('input', () => {
-            input.classList.add('touched');
-            validateInput(input);
-            validateAll();
-        });
-        input.addEventListener('change', () => {
-            input.classList.add('touched');
             validateInput(input);
             validateAll();
         });
         input.addEventListener('blur', () => {
-            input.classList.add('touched');
             validateInput(input);
             validateAll();
         });
     });
-
-    const sigInput = form.querySelector('[name="signature_date"]');
-    const expInput = form.querySelector('[name="expiration_date"]');
-    if (sigInput && expInput) {
-        const dateHandler = () => {
-            sigInput.classList.add('touched');
-            expInput.classList.add('touched');
-            validateAll();
-        };
-        sigInput.addEventListener('change', dateHandler);
-        expInput.addEventListener('change', dateHandler);
-        sigInput.addEventListener('input', dateHandler);
-        expInput.addEventListener('input', dateHandler);
-    }
 
     validateAll();
 }
 
 function validateContractForm() {
-    const form = document.getElementById('contract-form');
-    if (!form) return false;
-    form.classList.add('submitted');
-    
+    const form = document.getElementById('contract-form') || document.getElementById('edit-form');
+    if (!form) return true;
+    const submitBtn = document.getElementById('submit-btn') || document.getElementById('edit-save');
+    if (!submitBtn) return true;
     const inputs = Array.from(form.querySelectorAll('[data-validate]'));
-    let allValid = true;
-    
-    inputs.forEach(input => {
-        input.classList.add('touched');
-        const rawRules = input.getAttribute('data-validate');
-        if (rawRules) {
-            const value = input.value.trim();
-            const rules = rawRules.split('|');
-            let message = '';
-            
-            if (rules.includes('required') && !value) {
-                message = t('invalid_required');
-                allValid = false;
-            } else if (value) {
-                if (rules.includes('numbers') && !/^\d+$/.test(value)) {
-                    message = t('invalid_numbers_only');
-                    allValid = false;
-                } else if (rules.includes('letters') && !/^[\p{L}\s'\-]+$/u.test(value)) {
-                    message = t('invalid_letters_only');
-                    allValid = false;
-                }
-            }
-            
-            const errorEl = form.querySelector(`[data-error-for="${input.name}"]`);
-            if (errorEl) {
-                errorEl.textContent = message;
-            }
-            input.classList.toggle('input-invalid', Boolean(message));
-        }
-    });
-
-    const sigInput = form.querySelector('[name="signature_date"]');
-    const expInput = form.querySelector('[name="expiration_date"]');
-    if (sigInput && expInput) {
-        const sigVal = sigInput.value;
-        const expVal = expInput.value;
-        const errEl = form.querySelector('[data-error-for="expiration_date"]');
-        if (sigVal && expVal && expVal <= sigVal) {
-            if (errEl) {
-                errEl.textContent = t('err_date_chronology');
-            }
-            expInput.classList.add('input-invalid');
-            allValid = false;
-        }
-    }
-    
-    const submitBtn = document.getElementById('submit-btn');
-    if (submitBtn) {
-        submitBtn.disabled = !allValid;
-    }
-    return allValid;
+    const inputEvent = new Event('blur');
+    inputs.forEach(input => input.dispatchEvent(inputEvent));
+    return !submitBtn.disabled;
 }
 
 // ── Add Vehicle Linked to Contract ──────────────────────────
@@ -1748,156 +2110,124 @@ async function openEditModal(id) {
         const modal = document.getElementById('edit-modal');
         const body = document.getElementById('edit-modal-body');
         
-        document.getElementById('edit-modal-title').textContent = t('edit_contract_title');
-        
+        // Populate in-memory arrays from saved data
+        _formVehicles = [];
+        if (data.vehicles_list) {
+            try {
+                _formVehicles = JSON.parse(data.vehicles_list);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        if (_formVehicles.length === 0 && data.vehicle_reg) {
+            _formVehicles.push({
+                registration_number: data.vehicle_reg,
+                type: data.vehicle_type || '',
+                category: data.vehicle_category || ''
+            });
+        }
+
+        _formDrivers = [];
+        if (data.drivers_list) {
+            try {
+                _formDrivers = JSON.parse(data.drivers_list);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        if (_formDrivers.length === 0 && data.driver_name) {
+            _formDrivers.push({
+                name: data.driver_name,
+                phone: data.driver_phone || ''
+            });
+        }
+
         body.innerHTML = `
             <form id="edit-form">
+                <div class="section-title">${t('sect_contract')}</div>
+                
+                <!-- Line 1: Registration Number & Registry (Record) Number -->
                 <div class="form-row">
                     <div class="form-group">
+                        <label>${t('registration_number')} *</label>
+                        <input type="text" class="form-control" name="registration_number" value="${data.registration_number || ''}" data-validate="required|numbers">
+                        <div class="field-error" data-error-for="registration_number"></div>
+                    </div>
+                    <div class="form-group">
                         <label>${t('record_number')} *</label>
-                        <input type="text" class="form-control" name="record_number" value="${data.record_number}">
+                        <input type="text" class="form-control" name="record_number" value="${data.record_number}" data-validate="required|numbers">
                         <div class="field-error" data-error-for="record_number"></div>
                     </div>
                 </div>
+
+                <!-- Line 2: Start Date & End Date -->
                 <div class="form-row">
                     <div class="form-group">
                         <label>${t('signature_date')} *</label>
-                        <input type="date" class="form-control" name="signature_date" value="${data.signature_date}">
+                        <input type="date" class="form-control" name="signature_date" value="${data.signature_date}" data-validate="required">
                         <div class="field-error" data-error-for="signature_date"></div>
                     </div>
                     <div class="form-group">
                         <label>${t('expiration_date')} *</label>
-                        <input type="date" class="form-control" name="expiration_date" value="${data.expiration_date}">
+                        <input type="date" class="form-control" name="expiration_date" value="${data.expiration_date}" data-validate="required">
                         <div class="field-error" data-error-for="expiration_date"></div>
                     </div>
                 </div>
+
+                <!-- Line 3: Activity Location -->
                 <div class="form-row">
                     <div class="form-group">
-                        <label>${t('activity_location')} *</label>
-                        <select class="form-control" name="activity_location">
-                            <!-- Populated dynamically -->
-                        </select>
-                        <div class="field-error" data-error-for="activity_location"></div>
-                    </div>
-                    <div class="form-group">
-                        <label>${t('carrier_type')}</label>
-                        <select class="form-control" name="contract_type">
-                            <option value="Public" ${data.contract_type === 'Public' ? 'selected' : ''}>${t('opt_public')}</option>
-                            <option value="Private" ${data.contract_type === 'Private' ? 'selected' : ''}>${t('opt_private')}</option>
-                        </select>
+                        <label>${t('activity_location')}</label>
+                        ${buildLocationSelectHTML('activity_location', data.activity_location)}
                     </div>
                 </div>
+
+                ${buildVehicleSectionHTML('edit-vehicles-tbody', 'edit-add-vehicle-btn')}
+                ${buildDriverSectionHTML('edit-drivers-tbody', 'edit-add-driver-btn')}
             </form>
         `;
 
-        const select = body.querySelector('select[name="activity_location"]');
-        await populateCommunesSelect(select, data.activity_location, true);
+        const vehTbody = document.getElementById('edit-vehicles-tbody');
+        const drvTbody = document.getElementById('edit-drivers-tbody');
+        renderVehicleTable(vehTbody);
+        renderDriverTable(drvTbody);
 
-        modal.classList.remove('hidden');
-
-        const recordInput = body.querySelector('[name="record_number"]');
-        const sigInput = body.querySelector('[name="signature_date"]');
-        const expInput = body.querySelector('[name="expiration_date"]');
-        const locSelect = body.querySelector('[name="activity_location"]');
-
-        const recErr = body.querySelector('[data-error-for="record_number"]');
-        const sigErr = body.querySelector('[data-error-for="signature_date"]');
-        const expErr = body.querySelector('[data-error-for="expiration_date"]');
-        const locErr = body.querySelector('[data-error-for="activity_location"]');
-
-        const validateEditForm = async () => {
-            let isValid = true;
-            
-            // 1. Validate record_number
-            const recVal = recordInput.value.trim();
-            if (!recVal) {
-                recErr.textContent = t('invalid_required');
-                recordInput.classList.add('input-invalid');
-                isValid = false;
-            } else if (!/^\d+$/.test(recVal)) {
-                recErr.textContent = t('invalid_numbers_only');
-                recordInput.classList.add('input-invalid');
-                isValid = false;
-            } else {
-                // Duplicate check
-                try {
-                    const res = await API.checkDuplicate({ record_number: recVal, exclude_id: id });
-                    if (res.is_duplicate) {
-                        recErr.textContent = t('err_duplicate_registration');
-                        recordInput.classList.add('input-invalid');
-                        isValid = false;
-                    } else {
-                        recErr.textContent = '';
-                        recordInput.classList.remove('input-invalid');
-                    }
-                } catch (err) {
-                    console.error(err);
-                }
-            }
-
-            // 2. Validate signature_date
-            if (!sigInput.value) {
-                sigErr.textContent = t('invalid_required');
-                sigInput.classList.add('input-invalid');
-                isValid = false;
-            } else {
-                sigErr.textContent = '';
-                sigInput.classList.remove('input-invalid');
-            }
-
-            // 3. Validate expiration_date
-            if (!expInput.value) {
-                expErr.textContent = t('invalid_required');
-                expInput.classList.add('input-invalid');
-                isValid = false;
-            } else {
-                expErr.textContent = '';
-                expInput.classList.remove('input-invalid');
-            }
-
-            // 4. Validate activity_location
-            if (!locSelect.value) {
-                locErr.textContent = t('invalid_required');
-                locSelect.classList.add('input-invalid');
-                isValid = false;
-            } else {
-                locErr.textContent = '';
-                locSelect.classList.remove('input-invalid');
-            }
-
-            // 5. Validate date chronology
-            if (sigInput.value && expInput.value) {
-                if (expInput.value <= sigInput.value) {
-                    expErr.textContent = t('err_date_chronology');
-                    expInput.classList.add('input-invalid');
-                    isValid = false;
-                }
-            }
-
-            document.getElementById('edit-save').disabled = !isValid;
-            return isValid;
+        document.getElementById('edit-add-vehicle-btn').onclick = (e) => {
+            e.preventDefault();
+            openVehicleMiniModal(vehTbody);
+        };
+        document.getElementById('edit-add-driver-btn').onclick = (e) => {
+            e.preventDefault();
+            openDriverMiniModal(drvTbody);
         };
 
-        // Attach listeners to trigger validation in real-time
-        recordInput.addEventListener('input', debounce(validateEditForm, 500));
-        recordInput.addEventListener('blur', validateEditForm);
-        sigInput.addEventListener('change', validateEditForm);
-        expInput.addEventListener('change', validateEditForm);
-        sigInput.addEventListener('input', validateEditForm);
-        expInput.addEventListener('input', validateEditForm);
-        locSelect.addEventListener('change', validateEditForm);
-
-        // Run initial validation to reflect current values
-        await validateEditForm();
+        modal.classList.remove('hidden');
+        setupContractFormValidation();
 
         document.getElementById('edit-save').onclick = async () => {
-            const isValid = await validateEditForm();
-            if (!isValid) {
+            if (!validateContractForm()) {
                 showToast(t('form_has_errors'), 'error');
                 return;
             }
             const formData = new FormData(document.getElementById('edit-form'));
             const updateData = Object.fromEntries(formData.entries());
+
+            const vList = getVehiclesListFromForm();
+            const dList = getDriversListFromForm();
+
+            updateData.vehicles_list = JSON.stringify(vList);
+            updateData.drivers_list = JSON.stringify(dList);
+
+            if (vList.length > 0) {
+                updateData.vehicle_reg = vList[0].registration_number;
+                updateData.vehicle_type = vList[0].type;
+                updateData.vehicle_category = vList[0].category;
+            }
+            if (dList.length > 0) {
+                updateData.driver_name = dList[0].name;
+                updateData.driver_phone = dList[0].phone;
+            }
+
             try {
                 await API.updateLicense(id, updateData);
                 showToast(t('saved_ok'));
@@ -1924,9 +2254,6 @@ async function renderWelcome() {
         const welcomePage = await fetch('./pages/welcome.html');
         if (!welcomePage.ok) throw new Error('Could not load welcome page.');
         el.content.innerHTML = await welcomePage.text();
-        
-        // Translate welcome page content dynamically since it is loaded via fetch
-        applyLanguageToContainer(el.content);
 
         // Add event listeners for the action cards
         document.getElementById('action-add-contract').addEventListener('click', () => navigateTo('add-contract'));
@@ -1934,8 +2261,90 @@ async function renderWelcome() {
         document.getElementById('action-view-stats').addEventListener('click', () => navigateTo('statistics'));
 
     } catch (err) {
-        el.content.innerHTML = `<div class="empty-state"><h2>${t('toast_error')}</h2><p>${translateError(err.message)}</p></div>`;
+        el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
         showToast(err.message, 'error');
+    }
+}
+
+async function renderVehiclesView() {
+    el.content.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
+    try {
+        const vehicles = await API.getVehicles();
+        el.content.innerHTML = `
+            <div class="card mb-16">
+                <div class="card-header">
+                    <h3 class="card-title">🚚 ${t('nav_vehicles')}</h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>${t('vehicle_registration')}</th>
+                                    <th>${t('vehicle_type')}</th>
+                                    <th>${t('vehicle_category')}</th>
+                                    <th>${t('associated_company')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${vehicles.map(v => `
+                                    <tr>
+                                        <td><strong>${v.registration_number}</strong></td>
+                                        <td>${v.type || '-'}</td>
+                                        <td>${v.category || '-'}</td>
+                                        <td>${v.company_name || '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    } catch (err) {
+        showToast(err.message, 'error');
+        el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+    }
+}
+
+async function renderDriversView() {
+    el.content.innerHTML = '<div class="loading-overlay"><div class="spinner"></div></div>';
+    try {
+        const drivers = await API.getDrivers();
+        el.content.innerHTML = `
+            <div class="card mb-16">
+                <div class="card-header">
+                    <h3 class="card-title">👤 ${t('nav_drivers')}</h3>
+                </div>
+                <div class="card-body">
+                    <div class="table-wrapper">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>${t('driver_id')}</th>
+                                    <th>${t('driver_name')}</th>
+                                    <th>${t('driver_phone')}</th>
+                                    <th>${t('associated_company')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${drivers.map(d => `
+                                    <tr>
+                                        <td><span class="badge badge-blue">#${d.id}</span></td>
+                                        <td><strong>${d.driver_name}</strong></td>
+                                        <td>${d.driver_phone || '-'}</td>
+                                        <td>${d.company_name || '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    } catch (err) {
+        showToast(err.message, 'error');
+        el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
     }
 }
 

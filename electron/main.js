@@ -33,12 +33,21 @@ function findPython() {
     ? path.join(__dirname, "..", ".venv", "Scripts", "python.exe")
     : path.join(__dirname, "..", ".venv", "bin", "python3");
 
+  const parentVenvPython = isWindows
+    ? path.join(__dirname, "..", "..", ".venv", "Scripts", "python.exe")
+    : path.join(__dirname, "..", "..", ".venv", "bin", "python3");
+
   if (fs.existsSync(venvPython)) {
     console.log("✅ Using venv python:", venvPython);
     return venvPython;
   }
 
-  console.warn("⚠️ Virtual environment not found at:", venvPython);
+  if (fs.existsSync(parentVenvPython)) {
+    console.log("✅ Using parent venv python:", parentVenvPython);
+    return parentVenvPython;
+  }
+
+  console.warn("⚠️ Virtual environment not found at:", venvPython, "or", parentVenvPython);
   console.warn("⚠️ Falling back to system Python...");
 
   // Fallback to system Python if venv is missing

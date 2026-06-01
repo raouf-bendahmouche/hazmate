@@ -126,7 +126,11 @@ class DataEntryWindow(QDialog):
         grid.addWidget(self.route_title, row, 0, 1, 2)
         row += 1
 
-
+        self.route_origin_label = QLabel("Origin:")
+        grid.addWidget(self.route_origin_label, row, 0)
+        self.route_origin = QLineEdit()
+        grid.addWidget(self.route_origin, row, 1)
+        row += 1
 
         self.route_dest_label = QLabel("Destination:")
         grid.addWidget(self.route_dest_label, row, 0)
@@ -218,94 +222,21 @@ class DataEntryWindow(QDialog):
 
     def save_record(self):
         """Save the entire record to database."""
-        val_errors = {
-            "en": {
-                "err_required": "Please fill all required fields.",
-                "err_rec_num": "Registration number must follow a numeric format.",
-                "err_veh_reg": "Vehicle registration number must follow a numeric format.",
-                "err_comp_reg": "Registry Number must follow a numeric format.",
-                "err_name_nums": "Carrier name must not contain numbers.",
-                "err_chronology": "Expiration date must be later than start date",
-                "err_dest_format": "Destination must follow a text format.",
-                "title_error": "Validation Error",
-            },
-            "fr": {
-                "err_required": "Veuillez remplir tous les champs obligatoires.",
-                "err_rec_num": "Le numéro d'enregistrement doit être au format numérique.",
-                "err_veh_reg": "Le numéro d'immatriculation du véhicule doit être au format numérique.",
-                "err_comp_reg": "Le numéro de registre doit être au format numérique.",
-                "err_name_nums": "Le nom du transporteur ne doit pas contenir de chiffres.",
-                "err_chronology": "La date d'expiration doit être ultérieure à la date de début",
-                "err_dest_format": "La destination doit être au format texte.",
-                "title_error": "Erreur de validation",
-            },
-            "ar": {
-                "err_required": "يرجى ملء جميع الحقول المطلوبة.",
-                "err_rec_num": "رقم التسجيل يجب أن يكون بصيغة رقمية.",
-                "err_veh_reg": "رقم تسجيل المركبة يجب أن يكون بصيغة رقمية.",
-                "err_comp_reg": "رقم القيد يجب أن يكون بصيغة رقمية.",
-                "err_name_nums": "اسم الناقل يجب ألا يحتوي على أرقام.",
-                "err_chronology": "يجب أن يكون تاريخ انتهاء الصلاحية بعد تاريخ البدء",
-                "err_dest_format": "يجب أن تكون الوجهة بصيغة نصية.",
-                "title_error": "خطأ في التحقق",
-            }
-        }
         try:
-            lang = self.current_language if self.current_language in ["en", "fr", "ar"] else "en"
-            t_err = val_errors[lang]
-
-            # Validate all required fields
+            # Validate required fields
             if not all([
-                self.company_name.text().strip(),
-                self.company_address.toPlainText().strip(),
-                self.vehicle_reg.text().strip(),
-                self.vehicle_type.text().strip(),
-                self.vehicle_category.text().strip(),
-                self.route_dest.text().strip(),
-                self.record_number.text().strip(),
-                self.license_number.text().strip(),
-                self.hazmat_type.text().strip(),
+                self.company_name.text(),
+                self.vehicle_reg.text(),
+                self.record_number.text(),
+                self.license_number.text(),
             ]):
-                QMessageBox.warning(self, t_err["title_error"], t_err["err_required"])
+                QMessageBox.warning(self, "Error", "Please fill all required fields.")
                 return
 
-            company_reg = self.company_reg.text().strip()
-            vehicle_reg = self.vehicle_reg.text().strip()
-            license_num = self.license_number.text().strip()
-            record_num = self.record_number.text().strip()
-            company_name = self.company_name.text().strip()
-
-            # Format check: Registration/Record number must be numeric
-            if not record_num.isdigit():
-                QMessageBox.warning(self, t_err["title_error"], t_err["err_rec_num"])
-                return
-
-            # Format check: Vehicle registration must be numeric
-            if not vehicle_reg.isdigit():
-                QMessageBox.warning(self, t_err["title_error"], t_err["err_veh_reg"])
-                return
-
-            # Format check: Company registration must be numeric if provided
-            if company_reg and not company_reg.isdigit():
-                QMessageBox.warning(self, t_err["title_error"], t_err["err_comp_reg"])
-                return
-
-            # Format check: Company name must not contain digits
-            if any(char.isdigit() for char in company_name):
-                QMessageBox.warning(self, t_err["title_error"], t_err["err_name_nums"])
-                return
-
-            # Format check: Destination must follow a text format (not numeric-only)
-            if route_dest.isdigit():
-                QMessageBox.warning(self, t_err["title_error"], t_err["err_dest_format"])
-                return
-
-            # Chronology check: Expiration date must be later than signature date
-            sig_date = self.signature_date.date()
-            exp_date = self.expiration_date.date()
-            if exp_date <= sig_date:
-                QMessageBox.warning(self, t_err["title_error"], t_err["err_chronology"])
-                return
+            company_reg = self.company_reg.text()
+            vehicle_reg = self.vehicle_reg.text()
+            license_num = self.license_number.text()
+            record_num = self.record_number.text()
 
             # Check if license already exists
             if self.db.get_license_by_number(license_num):
@@ -355,8 +286,8 @@ class DataEntryWindow(QDialog):
 
             # Add route
             route_id = self.db.add_route(
-                "",
-                self.route_dest.text().strip(),
+                self.route_origin.text(),
+                self.route_dest.text(),
                 self.route_checkpoints.toPlainText(),
             )
 
@@ -393,6 +324,7 @@ class DataEntryWindow(QDialog):
         self.vehicle_reg.clear()
         self.vehicle_type.clear()
         self.vehicle_category.clear()
+        self.route_origin.clear()
         self.route_dest.clear()
         self.route_checkpoints.clear()
         self.record_number.clear()
@@ -430,6 +362,7 @@ class DataEntryWindow(QDialog):
         self.vehicle_category_label.setText(t.get("vehicle_category", "Vehicle Category:"))
         
         # Route labels
+        self.route_origin_label.setText(t.get("origin", "Origin:"))
         self.route_dest_label.setText(t.get("destination", "Destination:"))
         self.route_checkpoints_label.setText(t.get("checkpoints", "Checkpoints (optional):"))
         
