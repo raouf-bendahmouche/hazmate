@@ -114,9 +114,8 @@ def create_auth_router(auth_service):
         if not new_user:
             raise HTTPException(status_code=400, detail="New username cannot be empty.")
             
-        if _auth_service.user_exists(new_user):
-            raise HTTPException(status_code=400, detail="New username is already taken.")
-            
+        # Username uniqueness validation is completely removed. Multiple accounts can share
+        # the same username. Only current password verification is required.
         _auth_service.change_username(body.current_username.strip(), new_user)
         return {"status": "success", "message": "Username changed successfully", "data": {"username": new_user}}
 

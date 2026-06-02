@@ -282,7 +282,6 @@ classDiagram
 		+validate_token(token)
 		+change_password(username, new_password)
 		+change_username(current_username, new_username)
-		+user_exists(username)
 	}
 
 	class AuthRouter {
@@ -453,9 +452,19 @@ All SMTP configurations, test email routines, database backup handlers, and back
 B-Tree indexes are preserved on critical fields like vehicle registration numbers to guarantee fast, sub-millisecond lookups during search queries and validation checks.
 
 ### Username Change & Contact Us Centralization
-- **Username Change Flow**: Requires backend verification using the user's current password. Session state (token) is programmatically synchronized to prevent the operator from being signed out during renames. Password confirmation is mandatory to ensure credential owner authorization.
+- **Username Change Flow**: Requires backend verification using the user's current password. Session state (token) is programmatically synchronized to prevent the operator from being signed out during renames. Password confirmation is mandatory to ensure credential owner authorization. Username uniqueness constraints are completely deprecated; users can keep the same username or use duplicate usernames across accounts to maximize flexibility.
 - **Centralized Contact Us Section**: Integrated into the Settings panel as an elegant, interactive card containing mailto links. Placing it here provides the operator with immediate support access and centralizes developer credentials cleanly.
 - **Vehicle ID Auto-Increment**: The vehicle `id` field uses a unique system-generated AUTOINCREMENT schema to prevent duplicates, remain stable after deletions, and guarantee long-term integrity of foreign key relations.
+
+### Real-Time Dynamic Statistics System & Localization Integration
+To ensure that all statistics (Weekly, Monthly, Yearly) accurately reflect real-time business operations rather than static historical snapshots:
+- **Weekly statistics**: Restructured to dynamically represent the last 7 calendar days starting from today and going backward, auto-shifting on date transitions.
+- **Monthly statistics**: Restricted to represent only from the 1st of the current month until today.
+- **Yearly statistics**: Restricted to represent only from January 1 of the current year until today (grouped monthly).
+- **Custom Date Range Filter**: Integrated a date range filter that dynamically recalculates all metrics and changes activity chart granularity automatically (Daily for <=30 days, Weekly for 31-180 days, Monthly for >180 days).
+- **Cache Synchronization**: Caching is dynamically invalidated when a date transition is detected or on database mutations (added, edited, deleted, restored, suspended, or renewed contracts), keeping stats fresh with minimal overhead.
+- **Unified Filtering Controls**: The custom statistics selectors are standardized to "Apply" (تطبيق / Appliquer) and "Reset" (إعادة تعيين / Réinitialiser) across English, French, and Arabic. The Reset action fully restores default system-wide analytics rather than clearing UI text inputs.
+- **System-wide Localization Coherence**: Real-time stats, page headers, custom form drop-downs, and dynamically fetched page containers (such as the landing dashboard) are tightly integrated with the local dictionary-based i18n event handler, eliminating mixed-language UI fragments.
 
 ---
 

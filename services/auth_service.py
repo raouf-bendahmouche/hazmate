@@ -93,23 +93,15 @@ class AuthService:
         hashed = self.hash_password(new_password)
         self.db.update_user_password(username, hashed)
 
-    def user_exists(self, username: str) -> bool:
-        """
-        Check if a user exists in the database.
-        Detailed technical comment (Requirement 15):
-        Username updates are backend validated. Using backend validation prevents race conditions
-        where two operations attempt to write the same username, and ensures that we only update
-        unique user records.
-        """
-        return self.db.get_user_by_username(username) is not None
-
     def change_username(self, current_username: str, new_username: str) -> None:
         """
         Update the username inside the database and update session mappings.
-        Detailed technical comment (Requirement 15):
+        Detailed technical comment:
         Synchronization of usernames across active session mappings (tokens) is necessary
         so the active operator does not get signed out unexpectedly or left with a stale
-        session payload during execution.
+        session payload during execution. Username uniqueness constraints have been removed
+        so that users can change their username freely or even use existing ones; only password
+        verification remains mandatory for security.
         """
         self.db.update_username(current_username, new_username)
         # Update active tokens in-place

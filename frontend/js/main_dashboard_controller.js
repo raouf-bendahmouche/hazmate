@@ -222,7 +222,7 @@ function navigateTo(path, addToHistory = true) {
             }
         } catch (err) {
             showToast(err.message, 'error');
-            el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+            el.content.innerHTML = `<div class="empty-state"><h2>${t('toast_error')}</h2><p>${err.message}</p></div>`;
         }
     }, 50); // A small delay to ensure the spinner renders
 }
@@ -398,7 +398,7 @@ async function renderDashboard() {
 
         let forecastHtml = `
             <div class="card mb-16">
-                <div class="card-header"><h3 class="card-title">🔮 ${t('predictive_insights') || 'Predictive Insights: Expiry Forecast'}</h3></div>
+                <div class="card-header"><h3 class="card-title">🔮 ${t('predictive_insights')}</h3></div>
                 <div class="card-body">
                     <div class="stats-grid">
                         ${forecast.map((f, idx) => {
@@ -414,7 +414,7 @@ async function renderDashboard() {
                             `;
                         }).join('')}
                     </div>
-                    <p class="text-muted mt-8 text-sm">Automated forecast based on current active contracts and their respective expiration dates.</p>
+                    <p class="text-muted mt-8 text-sm">${t('predictive_insights_desc')}</p>
                 </div>
             </div>
         `;
@@ -467,7 +467,7 @@ async function renderDashboard() {
                 </div>
             </div>
 
-            <h2 class="mb-16 mt-24">📈 ${t('system_forecasting') || 'System Forecasting'}</h2>
+            <h2 class="mb-16 mt-24">📈 ${t('system_forecasting')}</h2>
             ${forecastHtml}
         `;
 
@@ -667,7 +667,7 @@ async function renderSettings() {
                     </div>
                     <div class="settings-card-body">
                         <p class="settings-desc">${t('settings_logout_desc')}</p>
-                        <button class="btn btn-danger" id="settings-logout-btn">🚪 ${t('settings_logout_btn') || 'Logout'}</button>
+                        <button class="btn btn-danger" id="settings-logout-btn">🚪 ${t('settings_logout_btn')}</button>
                     </div>
                 </div>
 
@@ -729,9 +729,7 @@ async function renderSettings() {
                 await renderSettings();
             } catch (err) {
                 if (err.message.includes('401') || err.message.toLowerCase().includes('password')) {
-                    errEl.textContent = t('settings_username_error') || 'Current password is incorrect.';
-                } else if (err.message.includes('taken') || err.message.includes('400')) {
-                    errEl.textContent = t('settings_username_taken') || 'New username is already taken.';
+                    errEl.textContent = t('settings_username_error');
                 } else {
                     errEl.textContent = err.message;
                 }
@@ -820,6 +818,7 @@ async function renderSettings() {
 
 let searchParams = { page: 1, limit: 50, search: '', status: '', carrier: '', activity_location: '' };
 let deletedSearchParams = { page: 1, limit: 50, search: '', status: '', activity_location: '', contract_type: '' };
+let statsFilter = { start_date: '', end_date: '' };
 
 async function renderSearch() {
     el.content.innerHTML = `
@@ -839,11 +838,11 @@ async function renderSearch() {
                         </select>
                     </div>
                     <div style="width: 150px">
-                        <label>${t('carrier_type') || 'Carrier Type'}</label>
+                        <label>${t('carrier_type')}</label>
                         <select class="form-control" id="filter-carrier">
                             <option value="">${t('opt_all')}</option>
-                            <option value="Public" ${searchParams.carrier === 'Public' ? 'selected' : ''}>${t('opt_public') || 'Public'}</option>
-                            <option value="Private" ${searchParams.carrier === 'Private' ? 'selected' : ''}>${t('opt_private') || 'Private'}</option>
+                            <option value="Public" ${searchParams.carrier === 'Public' ? 'selected' : ''}>${t('opt_public')}</option>
+                            <option value="Private" ${searchParams.carrier === 'Private' ? 'selected' : ''}>${t('opt_private')}</option>
                         </select>
                     </div>
                     <div style="width: 180px">
@@ -939,9 +938,9 @@ async function loadSearchResults() {
                     <td colspan="9">
                         <div class="empty-state">
                             <div class="empty-icon">📂</div>
-                            <h3>${t('no_records') || 'No records found'}</h3>
-                            <p>${t('try_adjust_filter') || 'Try adjusting your filters or search terms'}</p>
-                            <button class="btn btn-primary mt-16" onclick="navigateTo('add-contract')">${t('btn_add_new') || 'Add New Contract'}</button>
+                            <h3>${t('no_records')}</h3>
+                            <p>${t('try_adjust_filter')}</p>
+                            <button class="btn btn-primary mt-16" onclick="navigateTo('add-contract')">${t('btn_add_new')}</button>
                         </div>
                     </td>
                 </tr>
@@ -1194,21 +1193,63 @@ async function renderStatistics() {
     el.content.innerHTML = '<div class="loading-spinner"></div>';
 
     try {
-        const advanced = await API.statsAdvanced();
+        const isCustomActive = !!(statsFilter.start_date && statsFilter.end_date);
+        const advanced = await API.statsAdvanced(isCustomActive ? statsFilter : {});
 
         const kpis = advanced?.kpis || { total: 0, active: 0, inactive: 0, public: 0, private: 0, total_licenses: 0, active_licenses: 0, expired_licenses: 0 };
         const municipalities = advanced?.municipalities || {};
-        const activity = advanced?.activity || { daily: [], weekly: [], monthly: [], yearly: [] };
+        const activity = advanced?.activity || { daily: [], weekly: [], monthly: [], yearly: [], custom: [] };
         const municipalityStats = Object.entries(municipalities)
             .map(([name, data]) => ({ name, ...data }))
             .sort((a, b) => b.total - a.total);
 
         const topMunicipalities = municipalityStats.slice(0, 10);
 
+        // Activity Analysis Controls (Tabs vs Custom range label)
+        let activityControlsHtml = '';
+        if (isCustomActive) {
+            const granLabel = t('granularity_' + (activity.granularity || 'daily'));
+            activityControlsHtml = `
+                <div class="custom-period-badge" style="display: inline-block; padding: 6px 16px; background-color: var(--accent); color: white; border-radius: 20px; font-weight: 500; font-size: 14px; margin-bottom: 12px;">
+                    📅 ${t('custom_range_label')}: <strong>${statsFilter.start_date}</strong> ➔ <strong>${statsFilter.end_date}</strong> 
+                    (${granLabel})
+                </div>
+            `;
+        } else {
+            activityControlsHtml = `
+                <div class="activity-tabs" style="margin-bottom: 12px;">
+                    <button class="activity-tab active" data-period="weekly">${t('weekly')}</button>
+                    <button class="activity-tab" data-period="monthly">${t('monthly')}</button>
+                    <button class="activity-tab" data-period="yearly">${t('yearly')}</button>
+                </div>
+            `;
+        }
+
         const html = `
             <div class="stats-dashboard">
+                <!-- Date Filter Card -->
+                <div class="card mb-16">
+                    <div class="card-body">
+                        <form id="custom-stats-form" style="display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 150px;">
+                                <label style="display: block; margin-bottom: 6px; font-weight: 500;">📅 ${t('lbl_start_date')}</label>
+                                <input type="date" class="form-control" id="stats-start-date" required value="${statsFilter.start_date}">
+                            </div>
+                            <div style="flex: 1; min-width: 150px;">
+                                <label style="display: block; margin-bottom: 6px; font-weight: 500;">📅 ${t('lbl_end_date')}</label>
+                                <input type="date" class="form-control" id="stats-end-date" required value="${statsFilter.end_date}">
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button type="submit" class="btn btn-primary">🔍 ${t('btn_apply')}</button>
+                                <button type="button" class="btn btn-ghost" id="btn-reset-stats-filter">🔄 ${t('btn_reset')}</button>
+                            </div>
+                        </form>
+                        <div id="stats-filter-error" class="field-error" style="margin-top: 8px; color: var(--danger); font-weight: 500;"></div>
+                    </div>
+                </div>
+
                 <!-- Tier 1: KPI Cards -->
-                <div class="section-title" style="margin-top:0">${t('sect_carrier_stats') || 'Carrier Statistics'}</div>
+                <div class="section-title" style="margin-top:16px">${t('sect_carrier_stats')}</div>
                 <div class="kpi-section">
                     <div class="kpi-card total">
                         <div class="kpi-title">📊 ${t('kpi_total_carriers')}</div>
@@ -1232,7 +1273,7 @@ async function renderStatistics() {
                     </div>
                 </div>
 
-                <div class="section-title mt-16">${t('sect_license_stats') || 'License Statistics'}</div>
+                <div class="section-title mt-16">${t('sect_license_stats')}</div>
                 <div class="kpi-section">
                     <div class="kpi-card total">
                         <div class="kpi-title">📄 ${t('kpi_total_licenses')}</div>
@@ -1272,11 +1313,7 @@ async function renderStatistics() {
 
                 <!-- Tier 3: Activity Analysis -->
                 <div class="activity-section">
-                    <div class="activity-tabs">
-                        <button class="activity-tab active" data-period="weekly">${t('weekly')}</button>
-                        <button class="activity-tab" data-period="monthly">${t('monthly')}</button>
-                        <button class="activity-tab" data-period="yearly">${t('yearly')}</button>
-                    </div>
+                    ${activityControlsHtml}
                     <div class="chart-container">
                          <div class="chart-title">${t('chart_title_activity')}</div>
                         <div class="chart-canvas-container">
@@ -1292,10 +1329,41 @@ async function renderStatistics() {
         initMunicipalityPieChart(topMunicipalities);
         initCarrierTypePieChart(kpis);
         initLicenseStatusPieChart(kpis);
-        initActivityLineChart('weekly', activity);
 
-        // Setup event listeners
-        setupActivityTabs(activity);
+        if (isCustomActive) {
+            initActivityLineChart('custom', activity);
+        } else {
+            initActivityLineChart('weekly', activity);
+            setupActivityTabs(activity);
+        }
+
+        // Form logic
+        const form = document.getElementById('custom-stats-form');
+        const errEl = document.getElementById('stats-filter-error');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errEl.textContent = '';
+            
+            const startVal = document.getElementById('stats-start-date').value;
+            const endVal = document.getElementById('stats-end-date').value;
+
+            if (new Date(endVal) < new Date(startVal)) {
+                errEl.textContent = t('err_invalid_date_range') || 'End Date cannot be earlier than Start Date.';
+                showToast(errEl.textContent, 'error');
+                return;
+            }
+
+            statsFilter.start_date = startVal;
+            statsFilter.end_date = endVal;
+            await renderStatistics();
+        });
+
+        document.getElementById('btn-reset-stats-filter').onclick = async () => {
+            statsFilter.start_date = '';
+            statsFilter.end_date = '';
+            await renderStatistics();
+        };
 
     } catch (error) {
         console.error("Failed to render statistics:", error);
@@ -1707,7 +1775,7 @@ function openVehicleMiniModal(tableContainer, editIndex = -1) {
                 <div class="form-group">
                     <label>${t('vehicle_type')}</label>
                     <select class="form-control" id="mini-veh-type">
-                        <option value="">-- Choose type --</option>
+                        <option value="">${t('opt_choose_type')}</option>
                         <option value="Heavy Truck" ${existing.type === 'Heavy Truck' ? 'selected' : ''}>${t('vt_heavy_truck')}</option>
                         <option value="Semi-Trailer Tanker" ${existing.type === 'Semi-Trailer Tanker' ? 'selected' : ''}>${t('vt_semi_trailer')}</option>
                         <option value="Rigid Tanker" ${existing.type === 'Rigid Tanker' ? 'selected' : ''}>${t('vt_rigid_tanker')}</option>
@@ -1749,7 +1817,7 @@ function openVehicleMiniModal(tableContainer, editIndex = -1) {
             v.registration_number === reg && idx !== editIndex
         );
         if (dupIdx >= 0) {
-            document.getElementById('mini-veh-reg-err').textContent = `Registration "${reg}" already exists in this contract.`;
+            document.getElementById('mini-veh-reg-err').textContent = t('err_vehicle_reg_exists');
             document.getElementById('mini-veh-reg').classList.add('input-invalid');
             return;
         }
@@ -1956,7 +2024,7 @@ async function renderAddContract() {
                         <div class="form-group">
                             <label>${t('hazmat_type')}</label>
                             <select class="form-control" name="hazmat_type" id="hazmat-type-select">
-                                <option value="">-- Choose type --</option>
+                                <option value="">${t('opt_choose_type')}</option>
                                 <option value="Class 3 (Flammable Liquids)">${t('mat_class_3')}</option>
                                 <option value="Class 1 (Explosives)">${t('mat_class_1')}</option>
                                 <option value="Class 2.1 (Flammable Gases)">${t('mat_class_2_1')}</option>
@@ -1967,11 +2035,11 @@ async function renderAddContract() {
                                 <option value="Class 6.1 (Toxic Substances)">${t('mat_class_6_1')}</option>
                                 <option value="Class 8 (Corrosive Substances)">${t('mat_class_8')}</option>
                                 <option value="Class 9 (Miscellaneous Dangerous Substances)">${t('mat_class_9')}</option>
-                                <option value="Autre">${t('mat_other') || 'Other'}</option>
+                                <option value="Autre">${t('mat_other')}</option>
                             </select>
                         </div>
                         <div class="form-group hidden" id="custom-hazmat-wrapper">
-                            <label>${t('lbl_custom_hazmat') || 'Custom Material Type'}</label>
+                            <label>${t('lbl_custom_hazmat')}</label>
                             <input type="text" class="form-control" id="custom-hazmat-input">
                         </div>
 
@@ -2033,7 +2101,7 @@ async function renderAddContract() {
             console.error("Failed to fetch next record number:", e);
         }
     } catch (err) {
-        el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+        el.content.innerHTML = `<div class="empty-state"><h2>${t('toast_error')}</h2><p>${err.message}</p></div>`;
         showToast(err.message, 'error');
     }
 }
@@ -2345,13 +2413,18 @@ async function renderWelcome() {
         if (!welcomePage.ok) throw new Error('Could not load welcome page.');
         el.content.innerHTML = await welcomePage.text();
 
+        // Translate welcome elements using existing t() from i18n
+        el.content.querySelectorAll("[data-i18n]").forEach(subEl => {
+            subEl.textContent = t(subEl.getAttribute("data-i18n"));
+        });
+
         // Add event listeners for the action cards
         document.getElementById('action-add-contract').addEventListener('click', () => navigateTo('add-contract'));
         document.getElementById('action-search').addEventListener('click', () => navigateTo('search'));
         document.getElementById('action-view-stats').addEventListener('click', () => navigateTo('statistics'));
 
     } catch (err) {
-        el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+        el.content.innerHTML = `<div class="empty-state"><h2>${t('toast_error')}</h2><p>${err.message}</p></div>`;
         showToast(err.message, 'error');
     }
 }
@@ -2395,7 +2468,7 @@ async function renderVehiclesView() {
         `;
     } catch (err) {
         showToast(err.message, 'error');
-        el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+        el.content.innerHTML = `<div class="empty-state"><h2>${t('toast_error')}</h2><p>${err.message}</p></div>`;
     }
 }
 
@@ -2436,7 +2509,7 @@ async function renderDriversView() {
         `;
     } catch (err) {
         showToast(err.message, 'error');
-        el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+        el.content.innerHTML = `<div class="empty-state"><h2>${t('toast_error')}</h2><p>${err.message}</p></div>`;
     }
 }
 

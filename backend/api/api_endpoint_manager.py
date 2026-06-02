@@ -203,9 +203,9 @@ async def stats_monthly(months: int = 12):
     return _ok(db.get_monthly_transports(months))
 
 @app.get("/api/statistics/dashboard")
-async def dashboard_stats():
+async def dashboard_stats(start_date: Optional[str] = None, end_date: Optional[str] = None):
     """New combined statistics endpoint for the 3-tier dashboard."""
-    return _ok(stats_service.get_dashboard_statistics())
+    return _ok(stats_service.get_dashboard_statistics(start_date, end_date))
 
 
 # ── Licenses ────────────────────────────────────────────────────────────────
@@ -254,6 +254,7 @@ async def renew_license(license_id: int, request: Request):
 
     if new_date:
         db.update_license(license_id, expiration_date=new_date, status="active")
+        stats_service.clear_cache()
         return _ok(message="License renewed")
 
     if extend_days:
@@ -270,6 +271,7 @@ async def renew_license(license_id: int, request: Request):
             cur_dt = datetime.now()
         new_dt = cur_dt + timedelta(days=days)
         db.update_license(license_id, expiration_date=new_dt.strftime("%Y-%m-%d"), status="active")
+        stats_service.clear_cache()
         return _ok(message="License renewed")
 
     _err("Either extend_days or new_expiration_date is required")
@@ -289,6 +291,7 @@ async def suspend_license(license_id: int, request: Request):
 
     status = "suspended" if action == "suspend" else "stopped"
     db.update_license(license_id, status=status)
+    stats_service.clear_cache()
     return _ok(message=f"License {status}")
 
 @app.get("/api/licenses/deleted")
@@ -457,6 +460,7 @@ async def create_company(request: Request, authorization: str | None = Header(No
             _err("Company with this name already exists.")
 
     new_id = db.add_company(name, address, carrier_type, account_type)
+    stats_service.clear_cache()
     return _ok({"id": new_id}, "Company created")
 
 

@@ -178,9 +178,11 @@ Notes:
 
 ## Localization and Directionality
 
-- Supports Arabic, French, and English.
-- `i18n.js` applies text replacement and RTL/LTR layout switching.
+- Supports Arabic, French, and English with dynamic document language title updates.
+- `i18n.js` applies text replacement, custom template scan translations, and RTL/LTR layout switching.
 - Language state persists via local storage.
+- UI terminology standardizes the date-range stats and search filters to "Apply" (تطبيق / Appliquer) and "Reset" (إعادة تعيين / Réinitialiser) across all modules (contracts, vehicles, drivers, settings).
+- Standardized synchronization loop refreshes charts, dashboards, and pages (like `welcome.html` containing `data-i18n` attributes) upon language switches.
 
 ## Electron Security Bridge
 

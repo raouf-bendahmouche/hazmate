@@ -185,8 +185,10 @@ class Database:
             self._drop_hazmat_quantity_column(conn)
             # 4. Remove companies.registration_number safely if present.
             self._drop_companies_registration_number(conn)
+            # 5. Remove users.username UNIQUE constraint safely if present.
+            self._remove_users_unique_username_constraint(conn)
 
-            # 5. Create drivers table and migrate existing driver records
+            # 6. Create drivers table and migrate existing driver records
             try:
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS drivers (
@@ -296,6 +298,38 @@ class Database:
         conn.execute("DROP TABLE companies")
         conn.execute("ALTER TABLE companies_new RENAME TO companies")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_companies_name ON companies(name)")
+
+    def _remove_users_unique_username_constraint(self, conn):
+        """Remove UNIQUE constraint on users.username safely to allow duplicate usernames."""
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [row["name"] for row in cursor.fetchall()]
+        if not columns:
+            return
+
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'")
+        row = cursor.fetchone()
+        if not row or "UNIQUE" not in row["sql"].upper():
+            return
+
+        print("[MIGRATION] Removing UNIQUE constraint from users.username...")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS users_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'admin',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.execute("""
+            INSERT INTO users_new (id, username, password_hash, role, created_at, updated_at)
+            SELECT id, username, password_hash, role, created_at, updated_at FROM users
+        """)
+        conn.execute("DROP TABLE users")
+        conn.execute("ALTER TABLE users_new RENAME TO users")
+        print("[MIGRATION] users table UNIQUE constraint removed successfully.")
 
     # ─── Users (Authentication) ───────────────────────────────────────────────
 
@@ -537,6 +571,7 @@ class Database:
                                     self.add_driver(comp_id, n, p)
                     except Exception:
                         pass
+            self._invalidate_stats_cache()
         return lic_id
 
     def get_all_licenses(self):

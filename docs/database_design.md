@@ -99,7 +99,7 @@ erDiagram
 
 	users {
 		int id PK
-		text username UK
+		text username
 		text password_hash
 		text role
 		timestamp created_at
@@ -132,7 +132,7 @@ The schema relies on a small set of explicit integrity rules:
 
 - Primary keys are integer autoincrement identifiers on every table.
 - Foreign keys connect `vehicles.company_id` to `companies.id`, `licenses.vehicle_id` to `vehicles.id`, `licenses.route_id` to `routes.id`, `hazardous_materials.vehicle_id` to `vehicles.id`, and `notifications_log.license_id` to `licenses.id`.
-- Unique constraints protect `companies.registration_number`, `vehicles.registration_number`, `licenses.record_number`, `licenses.license_number`, `settings.key`, and `users.username`.
+- Unique constraints protect `companies.registration_number`, `vehicles.registration_number`, `licenses.record_number`, `licenses.license_number`, and `settings.key`.
 - Required columns keep the data usable for the UI and the scheduler: for example `companies.name`, `vehicles.registration_number`, `licenses.record_number`, `licenses.license_number`, `licenses.vehicle_id`, and `hazardous_materials.material_type` cannot be empty.
 
 These rules matter because the application is built around searchable operational records. If uniqueness or referential integrity were relaxed, the search, restore, and statistics flows would return ambiguous or invalid rows.
@@ -194,7 +194,7 @@ The trade-off is that backup scheduling is intentionally lightweight rather than
 
 - Listing and search use joins across licenses, vehicles, and companies so the UI can show a human-readable row without extra round trips.
 - The deleted-record path uses the same joins but filters `is_deleted=1`, which keeps active and archived views separate.
-- Statistics queries aggregate counts by carrier type, municipality, status, and expiry window; that is why the cache exists in `StatisticsService` and in `Database`.
+- Statistics queries aggregate counts by carrier type, municipality, status, and expiry window; that is why the cache exists in `StatisticsService` and in `Database`. They use dynamic, parameter-filtered date ranges (e.g. `DATE('now', '-6 days')` or `BETWEEN ? AND ?` for custom ranges) to generate real-time metrics instead of static snapshots.
 - Notifications are logged into `notifications_log` so the expiry scheduler can prove that alerts were sent.
 
 If these query patterns were changed to denormalized or uncontrolled access, the search and dashboard code would become less deterministic and harder to maintain.

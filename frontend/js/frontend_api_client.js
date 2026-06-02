@@ -45,7 +45,7 @@ async function apiFetch(path, options = {}) {
 const API = {
   ping: ()                => apiFetch("/api/ping"),
   stats: ()               => apiFetch("/api/stats"),
-  statsAdvanced: ()       => apiFetch("/api/statistics/dashboard"),
+  statsAdvanced: (params={}) => apiFetch("/api/statistics/dashboard" + (Object.keys(params).length ? "?" + new URLSearchParams(params) : "")),
   statsMonthly: (m=12)    => apiFetch(`/api/stats/monthly?months=${m}`),
 
   // Auth
