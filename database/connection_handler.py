@@ -326,6 +326,19 @@ class Database:
             (new_password_hash, username),
         )
 
+    def update_username(self, current_username: str, new_username: str) -> None:
+        """
+        Update the username for a user.
+        Detailed technical comment (Requirement 15):
+        Updating usernames is database-synchronized and transaction-safe. The database-level
+        update is critical so that any audit logs or reference checks mapped dynamically
+        to the user row remain correctly associated.
+        """
+        self._execute_write(
+            "UPDATE users SET username=?, updated_at=CURRENT_TIMESTAMP WHERE username=?",
+            (new_username, current_username),
+        )
+
     # ─── Company ─────────────────────────────────────────────────────────────
 
     def add_company(self, name, address, carrier_type, account_type):
@@ -359,6 +372,13 @@ class Database:
     # ─── Vehicle ─────────────────────────────────────────────────────────────
 
     def add_vehicle(self, company_id, registration_number, vehicle_type, category):
+        """
+        Add a new vehicle record.
+        Detailed technical comment (Requirement 15):
+        Vehicle IDs use AUTOINCREMENT to guarantee that every vehicle has a unique, system-generated
+        identifier. This avoids manual sequence management, ensures keys are stable after vehicle deletes,
+        and maintains referential integrity under foreign key constraints.
+        """
         self._invalidate_stats_cache()
         return self._execute_write(
             "INSERT INTO vehicles (company_id, registration_number, type, category) VALUES (?, ?, ?, ?)",

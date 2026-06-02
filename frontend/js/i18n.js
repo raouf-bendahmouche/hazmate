@@ -255,6 +255,17 @@ const TRANSLATIONS = {
     settings_logout: "Sign Out",
     settings_logout_desc: "End your current session and return to the login screen.",
     settings_logout_btn: "Logout",
+    vehicle_id: "Vehicle ID",
+    settings_change_username: "Change Username",
+    settings_new_username: "New Username",
+    settings_save_username: "Update Username",
+    settings_username_success: "Username updated successfully!",
+    settings_username_taken: "New username is already taken.",
+    settings_username_error: "Current password is incorrect.",
+    sect_contact_us: "Contact Us",
+    contact_devs: "This application was developed by the students:",
+    contact_univ: "Students at Ferhat Abbas University.",
+    contact_prompt: "If you encounter any issue, have feedback, or would like to suggest improvements or new features, feel free to contact us at:",
   },
 
   fr: {
@@ -488,6 +499,17 @@ const TRANSLATIONS = {
     settings_logout: "Déconnexion",
     settings_logout_desc: "Terminez votre session actuelle et revenez à l'écran de connexion.",
     settings_logout_btn: "Se déconnecter",
+    vehicle_id: "ID Véhicule",
+    settings_change_username: "Changer le nom d'utilisateur",
+    settings_new_username: "Nouveau nom d'utilisateur",
+    settings_save_username: "Mettre à jour le nom d'utilisateur",
+    settings_username_success: "Nom d'utilisateur mis à jour avec succès !",
+    settings_username_taken: "Le nouveau nom d'utilisateur est déjà pris.",
+    settings_username_error: "Le mot de passe actuel est incorrect.",
+    sect_contact_us: "Contactez-nous",
+    contact_devs: "Cette application a été développée par les étudiants :",
+    contact_univ: "Étudiants à l’Université Ferhat Abbas.",
+    contact_prompt: "Si vous rencontrez un problème, souhaitez donner votre avis, ou proposer des améliorations, vous pouvez nous contacter à :",
   },
 
   ar: {
@@ -721,6 +743,17 @@ const TRANSLATIONS = {
     settings_logout: "تسجيل الخروج",
     settings_logout_desc: "إنهاء الجلسة الحالية والعودة إلى شاشة تسجيل الدخول.",
     settings_logout_btn: "خروج",
+    vehicle_id: "معرف المركبة",
+    settings_change_username: "تغيير اسم المستخدم",
+    settings_new_username: "اسم المستخدم الجديد",
+    settings_save_username: "تحديث اسم المستخدم",
+    settings_username_success: "تم تحديث اسم المستخدم بنجاح!",
+    settings_username_taken: "اسم المستخدم الجديد مستخدم بالفعل.",
+    settings_username_error: "كلمة المرور الحالية غير صحيحة.",
+    sect_contact_us: "اتصل بنا",
+    contact_devs: "هذا التطبيق طوره الطالبان:",
+    contact_univ: "طالبان بجامعة فرحات عباس.",
+    contact_prompt: "إذا حدثت لكم أي مشكلة، أو أردتم إبداء آرائكم، أو اقتراح أي تعديلات أو تحسينات، يمكنكم التواصل معنا عبر البريد الإلكتروني:",
   }
 };
 

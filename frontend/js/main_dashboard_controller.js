@@ -101,6 +101,7 @@ async function init() {
     applyTheme();
     applyLanguage();
     setupEventListeners();
+    syncSidebarProfile();
     navigateTo('dashboard', false);
 }
 
@@ -556,7 +557,7 @@ async function renderSettings() {
                     <div class="settings-card-body">
                         <div class="settings-info-row">
                             <span class="settings-label">${t('settings_username')}</span>
-                            <span class="settings-value">${username}</span>
+                            <span class="settings-value" id="settings-disp-username">${username}</span>
                         </div>
                         <div class="settings-info-row">
                             <span class="settings-label">${t('settings_role')}</span>
@@ -566,6 +567,28 @@ async function renderSettings() {
                             <span class="settings-label">${t('settings_app_version')}</span>
                             <span class="settings-value">v2.0</span>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Change Username -->
+                <div class="settings-card">
+                    <div class="settings-card-header">
+                        <span class="settings-card-icon">👤</span>
+                        <h3>${t('settings_change_username')}</h3>
+                    </div>
+                    <div class="settings-card-body">
+                        <form id="change-username-form" autocomplete="off">
+                            <div class="form-group">
+                                <label>${t('settings_new_username')}</label>
+                                <input type="text" class="form-control" id="username-new" required value="${username}">
+                            </div>
+                            <div class="form-group">
+                                <label>${t('settings_current_password')}</label>
+                                <input type="password" class="form-control" id="username-pw-current" required>
+                            </div>
+                            <div class="field-error" id="username-error"></div>
+                            <button type="submit" class="btn btn-primary mt-8" id="username-save-btn">${t('settings_save_username')}</button>
+                        </form>
                     </div>
                 </div>
 
@@ -648,9 +671,76 @@ async function renderSettings() {
                     </div>
                 </div>
 
+                <!-- Contact Us -->
+                <div class="contact-card">
+                    <div class="contact-header">
+                        <span class="settings-card-icon">📬</span>
+                        <h3 class="contact-title">${t('sect_contact_us')}</h3>
+                    </div>
+                    <div class="contact-body">
+                        <p class="contact-devs">${t('contact_devs')}</p>
+                        <h4 class="contact-authors">Bendahmouche Abde Raouf &amp; Hamzaoui Abderraouf</h4>
+                        <p class="contact-univ">${t('contact_univ')}</p>
+                        <p style="margin-top: 12px;">${t('contact_prompt')}</p>
+                        <div class="contact-links">
+                            <a href="mailto:hamzaouihamoudi73@gmail.com" class="contact-email-btn">
+                                ✉️ hamzaouihamoudi73@gmail.com
+                            </a>
+                            <a href="mailto:abderaoufbendahmouche@gmail.com" class="contact-email-btn">
+                                ✉️ abderaoufbendahmouche@gmail.com
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
         `;
+
+        // ── Change Username Handler ──
+        document.getElementById('change-username-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const errEl = document.getElementById('username-error');
+            errEl.textContent = '';
+
+            const newUsername = document.getElementById('username-new').value.trim();
+            const password = document.getElementById('username-pw-current').value;
+
+            if (!newUsername) {
+                errEl.textContent = t('invalid_required');
+                return;
+            }
+
+            const saveBtn = document.getElementById('username-save-btn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = t('btn_saving') || 'Saving...';
+
+            try {
+                await API.changeUsername(username, newUsername, password);
+                
+                // Update session state
+                sessionStorage.setItem('auth_user', newUsername);
+                showToast(t('settings_username_success'), 'success');
+                
+                // Instant update
+                syncSidebarProfile();
+                
+                // Re-render to reflect new settings state
+                await renderSettings();
+            } catch (err) {
+                if (err.message.includes('401') || err.message.toLowerCase().includes('password')) {
+                    errEl.textContent = t('settings_username_error') || 'Current password is incorrect.';
+                } else if (err.message.includes('taken') || err.message.includes('400')) {
+                    errEl.textContent = t('settings_username_taken') || 'New username is already taken.';
+                } else {
+                    errEl.textContent = err.message;
+                }
+                showToast(errEl.textContent, 'error');
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = t('settings_save_username');
+            }
+        });
 
         // ── Change Password Handler ──
         document.getElementById('change-pw-form').addEventListener('submit', async (e) => {
@@ -2280,6 +2370,7 @@ async function renderVehiclesView() {
                         <table class="table">
                             <thead>
                                 <tr>
+                                    <th>${t('vehicle_id')}</th>
                                     <th>${t('vehicle_registration')}</th>
                                     <th>${t('vehicle_type')}</th>
                                     <th>${t('vehicle_category')}</th>
@@ -2289,6 +2380,7 @@ async function renderVehiclesView() {
                             <tbody>
                                 ${vehicles.map(v => `
                                     <tr>
+                                        <td><span class="badge badge-blue">#${v.id}</span></td>
                                         <td><strong>${v.registration_number}</strong></td>
                                         <td>${v.type || '-'}</td>
                                         <td>${v.category || '-'}</td>
@@ -2345,6 +2437,13 @@ async function renderDriversView() {
     } catch (err) {
         showToast(err.message, 'error');
         el.content.innerHTML = `<div class="empty-state"><h2>Error</h2><p>${err.message}</p></div>`;
+    }
+}
+
+function syncSidebarProfile() {
+    const sidebarUser = document.getElementById('sidebar-username');
+    if (sidebarUser) {
+        sidebarUser.textContent = sessionStorage.getItem('auth_user') || 'admin';
     }
 }
 

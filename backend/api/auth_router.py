@@ -33,6 +33,11 @@ def create_auth_router(auth_service):
         current_password: str
         new_password: str
 
+    class ChangeUsernameRequest(BaseModel):
+        current_username: str
+        new_username: str
+        current_password: str
+
     # ── Endpoints ─────────────────────────────────────────────────────────────
 
     @router.post("/login")
@@ -91,6 +96,29 @@ def create_auth_router(auth_service):
             raise HTTPException(status_code=400, detail="New password must be at least 6 characters.")
         _auth_service.change_password(body.username.strip(), body.new_password)
         return {"status": "success", "message": "Password changed successfully"}
+
+    @router.post("/change-username")
+    async def change_username(body: ChangeUsernameRequest):
+        """
+        Change the username for the authenticated user.
+        Requires the current password as confirmation before accepting the new username.
+        Detailed technical comment (Requirement 15):
+        Password confirmation is required for username changes to verify that the request
+        is authorized by the actual credential holder, preventing session hijacking or accidental renames.
+        """
+        result = _auth_service.login(body.current_username.strip(), body.current_password)
+        if result is None:
+            raise HTTPException(status_code=401, detail="Current password is incorrect.")
+        
+        new_user = body.new_username.strip()
+        if not new_user:
+            raise HTTPException(status_code=400, detail="New username cannot be empty.")
+            
+        if _auth_service.user_exists(new_user):
+            raise HTTPException(status_code=400, detail="New username is already taken.")
+            
+        _auth_service.change_username(body.current_username.strip(), new_user)
+        return {"status": "success", "message": "Username changed successfully", "data": {"username": new_user}}
 
     return router
 

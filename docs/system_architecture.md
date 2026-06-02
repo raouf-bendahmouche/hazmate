@@ -237,6 +237,7 @@ classDiagram
 		+create_user()
 		+get_user_by_username()
 		+update_user_password()
+		+update_username(current_username, new_username)
 		+add_company()
 		+get_companies()
 		+get_company_by_id()
@@ -280,6 +281,8 @@ classDiagram
 		+logout(token)
 		+validate_token(token)
 		+change_password(username, new_password)
+		+change_username(current_username, new_username)
+		+user_exists(username)
 	}
 
 	class AuthRouter {
@@ -448,6 +451,11 @@ All SMTP configurations, test email routines, database backup handlers, and back
 
 ### Indexing Strategy
 B-Tree indexes are preserved on critical fields like vehicle registration numbers to guarantee fast, sub-millisecond lookups during search queries and validation checks.
+
+### Username Change & Contact Us Centralization
+- **Username Change Flow**: Requires backend verification using the user's current password. Session state (token) is programmatically synchronized to prevent the operator from being signed out during renames. Password confirmation is mandatory to ensure credential owner authorization.
+- **Centralized Contact Us Section**: Integrated into the Settings panel as an elegant, interactive card containing mailto links. Placing it here provides the operator with immediate support access and centralizes developer credentials cleanly.
+- **Vehicle ID Auto-Increment**: The vehicle `id` field uses a unique system-generated AUTOINCREMENT schema to prevent duplicates, remain stable after deletions, and guarantee long-term integrity of foreign key relations.
 
 ---
 

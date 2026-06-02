@@ -36,7 +36,7 @@ async function apiFetch(path, options = {}) {
   });
   const data = await resp.json();
   if (!resp.ok || data.status === "error") {
-    throw new Error(data.message || `HTTP ${resp.status}`);
+    throw new Error(data.message || data.detail || `HTTP ${resp.status}`);
   }
   return data.data;
 }
@@ -59,6 +59,10 @@ const API = {
   changePassword: (username, current_password, new_password) => apiFetch("/auth/change-password", {
     method: "POST",
     body: JSON.stringify({ username, current_password, new_password }),
+  }),
+  changeUsername: (currentUsername, newUsername, currentPassword) => apiFetch("/auth/change-username", {
+    method: "POST",
+    body: JSON.stringify({ current_username: currentUsername, new_username: newUsername, current_password: currentPassword }),
   }),
 
   // Licenses
